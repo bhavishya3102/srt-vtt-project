@@ -1,542 +1,559 @@
-
-
-> ## ⚠️ Out of date — describes the previous PDF pipeline
->
-> This walkthrough was captured from the **document/PDF** version of this project, before it
-> became a course-transcript Q&A app. It is kept because the RRF arithmetic and the general
-> shape of the trace are still instructive, but these specifics no longer match the code:
->
-> | In this document | In the current code |
-> |---|---|
-> | 6 query variants, always | 3–4, decomposition only when the question is compound |
-> | HyDE asks for an encyclopedic reference passage | HyDE imitates spoken tutorial transcript |
-> | Qdrant collection `documents`, payload `source` / `chunkIndex` | `course_transcripts`, payload carries `courseId`, `lessonId`, `moduleTitle`, `startMs`, `endMs`, `cueStart`, `cueEnd` |
-> | Character-window chunking of a PDF | three-stage sentence- and pause-aware chunking of subtitle cues |
-> | Upload a file at `POST /api/index` | `npm run ingest` over subtitle folders |
-> | Answer cites a chunk index | answer cites module, chapter and an exact timestamp |
->
-> A fresh walkthrough would need a live run against a real key and a running Qdrant.
-> See [README.md](README.md) for how the pipeline works today.
-
----
-
-# Qdrant UI--- to show vectore database tables -- chunks
-
-1. Dashboard (GUI)
-
-http://localhost:6333/dashboard
-Browser me kholo → Collections tab. Wahan documents dikhega, uspar click karke points browse kar sakte ho, payload (text, source, chunkIndex) dekh sakte ho, aur search bhi try kar sakte ho.
-
-
 # Pipeline Walkthrough — One Real Question, Every Stage
 
+This document follows **one actual run** of the pipeline from end to end. Every number, ranking, score
+and piece of text below was captured from a real execution against a live Qdrant and the real OpenAI
+API. Nothing here is illustrative.
 
-This document follows **one actual run** of the pipeline from end to end. Every number, ranking and
-piece of text below was captured from a real execution against a live Qdrant and the real OpenAI
-API — nothing here is illustrative or made up. Reproduction steps are at the bottom.
+**The question:** `expo router me dynamic routes kaise banate hain?` — asked in Hinglish, on purpose,
+because the answer has to come back in the same language.
 
+**The corpus:** the Expo course transcripts — 1 course, 18 modules, 87 lessons, 22.7 hours of speech,
+indexed as 1382 chunks in a 1536-dimensional Cosine collection.
 
-**The document indexed:** a 6-section fictional "Zephyrite Protocol Handbook" (~3,500 characters).
-Fictional on purpose — the model has no prior knowledge of Zephyrite, so any correct answer *must*
-have come from retrieval, not from the model's memory.
-
-**The question asked:**
-
-```
-why does zephyrite lose data when a node crashes and how do i fix it
-```
-
-Note the missing punctuation and the two-part structure. Both matter later.
+Reproduction steps are at the [bottom](#reproduce-this-yourself).
 
 ---
 
-## The whole run at a glance
+## Contents
 
-```
-  QUESTION
-     │
-     ▼
-┌─────────────────────────────────────────────────────────────────┐
-│ STAGE 1  Query expansion            2 LLM calls, parallel       │
-│          1 question  ──►  6 search variants            3,930 ms │
-└─────────────────────────────────────────────────────────────────┘
-     │
-     ▼
-┌─────────────────────────────────────────────────────────────────┐
-│ STAGE 2  Embedding                  1 batched API call          │
-│          6 texts  ──►  6 × 1536-dim vectors              481 ms │
-└─────────────────────────────────────────────────────────────────┘
-     │
-     ▼
-┌─────────────────────────────────────────────────────────────────┐
-│ STAGE 3  Vector search              6 searches, parallel        │
-│          6 vectors  ──►  6 ranked lists × 4 hits = 24     32 ms │
-└─────────────────────────────────────────────────────────────────┘
-     │
-     ▼
-┌─────────────────────────────────────────────────────────────────┐
-│ STAGE 4  Reciprocal Rank Fusion     pure arithmetic, no API     │
-│          24 hits  ──►  5 unique  ──►  top 5              <1 ms │
-└─────────────────────────────────────────────────────────────────┘
-     │
-     ▼
-┌─────────────────────────────────────────────────────────────────┐
-│ STAGE 5  Generation                 1 LLM call                  │
-│          5 chunks (4,519 chars)  ──►  answer           2,454 ms │
-└─────────────────────────────────────────────────────────────────┘
-     │
-     ▼
-  ANSWER                                    total ≈ 6.9 seconds
-```
-
-Everything above happens **inside the worker process**, after the HTTP request has already returned
-`202 Accepted`. The client polls `GET /api/query/:id` for the result.
+- [Part 1 — Indexing one lesson](#part-1--indexing-one-lesson)
+- [Part 2 — Answering the question](#part-2--answering-the-question)
+- [Part 3 — The other two routes](#part-3--the-other-two-routes)
+- [Part 4 — A compound question](#part-4--a-compound-question)
+- [What this run cost](#what-this-run-cost)
+- [Reproduce this yourself](#reproduce-this-yourself)
 
 ---
 
-## Stage 0 — Indexing (this ran earlier, once)
-
-Before any question can be asked, the PDF has to become vectors.
+# Part 1 — Indexing one lesson
 
 ```
-handbook.pdf
-     │
-     ├─ pdf-parse ────────────► raw text (~3,500 chars)
-     │
-     ├─ chunkText() ──────────► 5 chunks, 1000 chars each, 200 overlap
-     │
-     ├─ embedTexts(5) ────────► 5 × 1536-dim vectors   (1 batched call)
-     │
-     └─ qdrant.upsert() ──────► collection "documents", 5 points
+lesson   : Module 4 / Dynamic Routes
+file     : 3-Dynamic Routes_epm.srt
+cues     : 88        duration : 06:50
 ```
 
-The 5 chunks that actually landed in Qdrant:
+## 1.0 — What the parser sees
 
-| # | Length | First words |
+The `.srt` file is a list of timed cues. Cues 10–19, exactly as `parseSubtitles()` returns them:
+
+```
+[10] 01:02→01:07  "routes because let's say right now you only have three posts."
+[11] 01:07→01:09  "So you are basically going to create."
+[12] 01:10→01:19  "We can say post1.tsx exactly post2.tsx, post3.tsx and in future let's say you have millions"
+[13] 01:19→01:27  "of posts then is this feasible to create post1 to post1 million.tsx?"
+[14] 01:27→01:27  "No."
+[15] 01:28→01:30  "This is where the use of dynamic routes come."
+[16] 01:31→01:33  "Perfect, so how this actually work?"
+[17] 01:34→01:38  "This is going to be basically work something like square notation."
+[18] 01:38→01:44  "Perfect, so you are basically going to use your parameters as we can say brackets and"
+[19] 01:44→01:51  "explore outer automatically treat that parameter as a variable in the path and then with the"
+```
+
+Two things to notice, because both drive the design that follows:
+
+- **Cues cut mid-sentence.** Cue 12 ends at "you have millions" and cue 13 continues "of posts then…".
+  A splitter that treated each cue as a unit would tear that thought in half.
+- **The transcription is imperfect.** "explore outer" is the recogniser's attempt at "Expo Router",
+  and "post1 million.tsx" is "post1million.tsx". The answering prompt is told to read charitably.
+
+Note also that cue 12 contains `post1.tsx`, `post2.tsx`, `post3.tsx`. Those dots must not be read as
+sentence ends — see stage 1.
+
+## 1.1 — Stage 1: cues → sentences
+
+```
+88 cues → 72 sentences
+
+forcedCut (no punctuation was available) : 0
+discourse-marker openings ("So", "Perfect", …) : 46 / 72
+sentences spanning more than one cue : 22
+```
+
+The cue texts are joined into one string alongside a character-offset map, so every sentence still
+knows which cues it came from. That is the entire trick that keeps timestamps alive.
+
+**Sentences that span multiple cues** — reassembled across the cue boundary, with the cue range kept:
+
+```
+cues 0–1  00:00  "Here everyone and in this lecture we will learn how to create dynamic routes with the help o…"
+cues 2–3  00:07  "Dynamic routes let you build screen that accept parameters from the URL or we can say naviga…"
+cues 4–5  00:21  "So in let's say in Xpo route basically here you wanted to have let's say you are on post."
+```
+
+**Two sentences inside one cue** — split, but both still attributed to that cue:
+
+```
+cue  4  startsCue=false  "So what are dynamic routes?"
+cue 35  startsCue=false  "Easy step number one is done."
+```
+
+`startsCue=false` matters: only a sentence that *begins* a cue can have a pause in front of it, so
+this flag stops stage 2 from crediting a silence to the wrong sentence.
+
+**`forcedCut` is 0 for this lesson** — every sentence ended on real punctuation. Across the whole
+corpus 1.3% of chunks end on a forced cut instead, because a quarter of all cues carry no terminator
+at all. When that happens the break is placed at the longest pause inside the run rather than at an
+arbitrary character count.
+
+**The abbreviation guards, on this lesson's own text.** `post1.tsx` and `post2.tsx` in cue 12 are not
+sentence ends, because the rule requires whitespace after the terminator. `post1 million.tsx?` in cue
+13 *is* one, because `?` is unambiguous.
+
+## 1.2 — Stage 2: where the speaker actually paused
+
+Gaps between the cues shown above:
+
+```
+before cue 11 :   110 ms
+before cue 12 :   900 ms
+before cue 13 :    81 ms
+before cue 14 :   461 ms
+before cue 15 :   481 ms
+before cue 16 :   221 ms
+before cue 17 :   510 ms
+before cue 18 :   841 ms
+before cue 19 :   201 ms
+before cue 20 :    40 ms
+```
+
+None of these reaches the 1500 ms threshold, so this whole stretch is one block — correctly, since
+the instructor is mid-explanation throughout. The threshold isn't a guess: across the corpus the
+median gap is 359 ms, and a gap ≥1500 ms arrives roughly every 871 characters, just under the 1200
+chunk target. That is what lets most chunks close on a genuine pause.
+
+## 1.3 — Stage 3: sentences → chunks
+
+```
+72 sentences → 7 chunks
+target 1200 · min 600 · max 1800 · overlap 240
+```
+
+| # | chars | cues | time span | overlap | closed because |
+|---|---|---|---|---|---|
+| 1 | 1050 | 0–15 | 00:00–01:30 | 4 cues | ≥75% target + discourse marker |
+| 2 | 928 | 12–27 | 01:10–02:21 | 4 cues | ≥75% target + discourse marker |
+| 3 | 926 | 24–36 | 02:04–03:14 | 2 cues | **pause of 2520 ms** |
+| 4 | 1047 | 35–51 | 02:56–04:29 | 3 cues | ≥75% target + discourse marker |
+| 5 | 930 | 49–63 | 04:11–05:21 | 4 cues | ≥75% target + discourse marker |
+| 6 | 1021 | 60–78 | 05:06–06:19 | 3 cues | ≥75% target + discourse marker |
+| 7 | 693 | 76–87 | 06:04–06:50 | — | end of lesson |
+
+Every chunk lands between 693 and 1050 characters — none hits the 1800 ceiling, and only the last
+falls below the 600 floor, which is allowed. Chunk 3 closed on a real 2.5-second silence. The others
+closed near the target at a discourse marker, which in this lesson means the instructor starting a
+sentence with "So" or "Perfect" — he does that 46 times in 72 sentences, which is why markers are
+only ever a tie-breaker near the size target and never a break on their own.
+
+The overlap column is cues repeated into the following chunk, carried as **whole sentences**, so no
+chunk boundary ever lands mid-word.
+
+## 1.4 — One chunk in full
+
+Chunk 3 — cues 24–36, `02:04–03:14`, 926 characters, 9 sentences:
+
+> Let's say we have a app router and inside this app router we have this post and each post have this
+> unique square bracket and inside that square bracket we basically have something on as post ID. So,
+> this post ID is a dynamic route. So, every time for post one, this one is going to replace this post
+> ID same for two, same for the one million that we have perfect. So, by doing this, we are going to
+> follow the best practice. So, now let's move ahead and we'll see how you can basically create it.
+> So, for that, let me go to my VS Code and inside this app, let's say inside this profile, we have
+> this user, but let's take the post example. So let me say this as a post and inside this post create
+> a new file. and use the square bracket here and let me call this as a post ID dot TSX. Easy step
+> number one is done. Then simply initialize a React component as RNFES and instead of this you can
+> simply say this as post ID screen.
+
+Readable prose that begins and ends on a sentence, spanning 70 seconds of speech.
+
+## 1.5 — What gets stored
+
+The Qdrant point written for that chunk — the vector plus this payload:
+
+```
+courseId     "expo-mastery"
+lessonId     "expo-mastery:module-4--3-dynamic-routes"
+moduleId     "module-4"
+moduleTitle  "Module 4"
+lessonTitle  "Dynamic Routes"
+moduleOrder  4
+lessonOrder  3
+kind         "chapter"
+startMs      124960          ← 02:04
+endMs        194060          ← 03:14
+cueStart     24
+cueEnd       36
+chunkIndex   2
+chunkCount   7
+contentHash  "41ef7867f3e619467f523134…"
+indexedAt    "2026-07-30T06:29:23.576Z"
+text         "Let's say we have a app router and inside this app router we have this"…
+```
+
+`startMs`/`endMs`/`cueStart`/`cueEnd` are the whole point. Without them an answer could say *what* but
+never *where*. `contentHash` is a sha256 of the source file, which is what lets a re-run skip this
+lesson for free.
+
+---
+
+# Part 2 — Answering the question
+
+```
+❯ expo router me dynamic routes kaise banate hain?
+```
+
+## Step 1 — maskPII  ·  1 ms, zero LLM calls
+
+```
+found : []
+text  : "expo router me dynamic routes kaise banate hain?"   (unchanged)
+```
+
+Pure regex. Nothing to redact here, but this is where a pasted API key or email would be replaced
+before anything left the process. It is deliberately conservative: this corpus is full of things that
+*look* like personal data (`00:00:06,420`, `#c3f53c`, `8081`, `1.2.3`) and all of them must survive
+untouched.
+
+## Step 2 — classifyQuery  ·  3346 ms, 1 LLM call
+
+```
+allowed : true
+intent  : content        → the content pipeline
+reason  : ""
+```
+
+One call does both jobs. It decides the question is in scope, and that it is about the *material*
+rather than the *shape* of the course. Combining them is what makes the gate free — the same call
+that would have rejected an off-topic question also does the routing.
+
+## Step 3 — Query expansion  ·  2 LLM calls, run in parallel
+
+```
+original   : "expo router me dynamic routes kaise banate hain?"
+rewritten  : "How do you create dynamic routes in Expo Router?"
+stepBack   : "What are the different routing methods available in Expo Router?"
+isCompound : false        → decomposition SKIPPED
+subQueries : []
+variants   : 3
+```
+
+The Hinglish question is rewritten into English because the transcripts are English — matching the
+language of the corpus is what the retrieval step needs, while the *answer* will come back in
+Hinglish.
+
+`isCompound: false` is the interesting part. This question asks one thing, so no sub-query is
+generated and the run proceeds with three variants instead of four. Under the old always-decompose
+design this would have produced three near-identical sub-questions about dynamic routes, each adding a
+redundant ranking to the fusion below.
+
+**HyDE** — 562 characters of invented passage, written to imitate what an instructor would *say*:
+
+> So, to create dynamic routes in Expo Router, you can use square brackets in your file names. For
+> example, if you want a dynamic route for user profiles, you would create a file named `[id].js`
+> inside your `app` directory. Right now, when you navigate to `/user/123`, the router will recognize
+> `123` as the dynamic part and pass it as a parameter. You can access this parameter using the
+> `useRouter` hook from the `expo-router` package. You can see here how this makes it really easy to
+> handle different user profiles without creating separate files for each one.
+
+Note the register: "So,", "Right now,", "You can see here". That is the point of the rewrite to this
+prompt — the search below is done with this passage's embedding, and a passage written like the corpus
+lands near the corpus. Note also that it is not entirely accurate (the course uses `.tsx`, not `.js`).
+That doesn't matter: HyDE is a search key, never an answer.
+
+## Step 4 — Embedding  ·  1 batched call
+
+```
+model   : text-embedding-3-small
+vectors : 3 × 1536d
+```
+
+All three variants in one request.
+
+## Step 5 — Search  ·  3 vector searches, top 6 each, filtered to `courseId`
+
+**rewritten** — "How do you create dynamic routes in Expo Router?"
+
+```
+1. cos=0.7515  Module 4 / Dynamic Routes                        00:00–01:30  chunk 0
+2. cos=0.6336  Module 4 / File Based Routing Basics             00:00–00:55  chunk 0
+3. cos=0.6331  Module 4 / Introduction to Expo Router           01:14–02:20  chunk 1
+4. cos=0.6065  Module 4 / Introduction to Expo Router           02:05–03:22  chunk 2
+5. cos=0.6002  Module 4 / Dynamic Routes                        01:10–02:21  chunk 1
+6. cos=0.5911  Module 3 / Introduction to Navigation in RN      13:17–14:32  chunk 13
+```
+
+**stepBack** — "What are the different routing methods available in Expo Router?"
+
+```
+1. cos=0.6632  Module 4 / Introduction to Expo Router           02:05–03:22  chunk 2
+2. cos=0.6574  Module 4 / Introduction to Expo Router           01:14–02:20  chunk 1
+3. cos=0.6417  Module 3 / Introduction to Navigation in RN      13:17–14:32  chunk 13
+4. cos=0.6358  Module 4 / File Based Routing Basics             00:00–00:55  chunk 0
+5. cos=0.6257  Module 4 / Introduction to Expo Router           05:53–07:01  chunk 6
+6. cos=0.6256  Module 4 / Introduction to Expo Router           00:00–01:28  chunk 0
+```
+
+**hyde** — the invented instructor passage
+
+```
+1. cos=0.7024  Module 4 / Dynamic Routes                        00:00–01:30  chunk 0
+2. cos=0.6632  Module 4 / File Based Routing Basics             00:00–00:55  chunk 0
+3. cos=0.6550  Module 4 / Introduction to Expo Router           03:05–04:28  chunk 3
+4. cos=0.6439  Module 4 / Introduction to Expo Router           01:14–02:20  chunk 1
+5. cos=0.6414  Module 4 / Dynamic Routes                        01:10–02:21  chunk 1
+6. cos=0.6358  Module 4 / Introduction to Expo Router           00:00–01:28  chunk 0
+```
+
+The three lists genuinely disagree, which is the reason for running more than one. `rewritten` and
+`hyde` both put *Dynamic Routes chunk 0* first; `stepBack`, being broader, ranks the general
+*Introduction to Expo Router* chunks above it and surfaces `chunk 6`, which neither of the others
+found at all.
+
+## Step 6 — Reciprocal Rank Fusion  ·  k = 60
+
+Nine distinct chunks appeared across the three lists. Each chunk scores the sum, over every list it
+appears in, of `1 / (60 + rank)`:
+
+```
+#1  File Based Routing Basics · 00:00 · chunk 0
+    found by : rewritten@2, stepBack@4, hyde@2
+    1/(60+2) + 1/(60+4) + 1/(60+2) = 0.047883      best cosine 0.6632
+
+#2  Introduction to Expo Router · 01:14 · chunk 1
+    found by : rewritten@3, stepBack@2, hyde@4
+    1/(60+3) + 1/(60+2) + 1/(60+4) = 0.047627      best cosine 0.6574
+
+#3  Dynamic Routes · 00:00 · chunk 0
+    found by : rewritten@1, hyde@1
+    1/(60+1) + 1/(60+1)            = 0.032787      best cosine 0.7515
+
+#4  Introduction to Expo Router · 02:05 · chunk 2
+    found by : rewritten@4, stepBack@1
+    1/(60+4) + 1/(60+1)            = 0.032018      best cosine 0.6632
+
+#5  Introduction to Navigation in RN · 13:17 · chunk 13
+    found by : rewritten@6, stepBack@3
+    1/(60+6) + 1/(60+3)            = 0.031025      best cosine 0.6417
+
+#6  Dynamic Routes · 01:10 · chunk 1
+    found by : rewritten@5, hyde@5
+    1/(60+5) + 1/(60+5)            = 0.030769      best cosine 0.6414
+```
+
+**Worth pausing on #1 versus #3.** *Dynamic Routes chunk 0* has by far the best raw similarity — 0.7515
+against 0.6632 — yet it fuses to third, because only two of the three lists found it while #1 was
+found by all three. That is RRF doing exactly what it is for: rewarding agreement across differently
+phrased searches rather than trusting one high cosine.
+
+It is also why fusion order is **not** the same as what ends up cited. All six chunks go to the model,
+which then picks the ones that actually contain the answer — and as Step 8 shows, both citations came
+from *Dynamic Routes*, the chunk RRF had ranked third and sixth.
+
+## Step 7 — The grounded answer  ·  1 LLM call
+
+The top 6 fused chunks are handed over as numbered excerpts (~5,500 characters). Structured output, so
+the model returns `{answer, covered, citations}` rather than prose we would have to parse.
+
+```
+covered : true
+```
+
+> Expo router me dynamic routes banane ke liye aapko square brackets ka istemal karna hota hai. Jab aap
+> kisi route ko define karte hain, toh aap parameters ko brackets me rakhte hain, jaise ki post ID.
+> Isse expo router us parameter ko path me variable ki tarah treat karta hai. Is tarah se aap easily
+> dynamic routes create kar sakte hain, bina har post ID ke liye alag file banaye. Yeh flexibility
+> aapko navigation me help karti hai.
+
+Asked in Hinglish, answered in Hinglish — while every one of the excerpts it read was English.
+
+## Step 8 — pinpointSentence: from a 90-second window to one line
+
+Each citation arrives as an excerpt number plus a sentence quoted **verbatim**. That quote is matched
+back against the sentences of its own chunk to find the exact cue it came from. Deterministic, no
+extra model call.
+
+**Citation [1]**
+
+```
+chunk span  : cues 0–15 · 00:00–01:30 · 90 s wide
+model quote : "Dynamic routes let you build screen that accept parameters from the URL or we can say navigation…"
+matched cue : 2, at 00:07
+cue text    : "Dynamic routes let you build screen that accept parameters from the URL or we can say navigation…"
+pinpointMs  : 7780  →  00:07        exactQuote = true
+narrowing   : 90 s span → 1 line
+deep link   : #/lesson/expo-mastery:module-4--3-dynamic-routes?t=7780&c=2
+```
+
+**Citation [2]**
+
+```
+chunk span  : cues 12–27 · 01:10–02:21 · 71 s wide
+model quote : "Perfect, so you are basically going to use your parameters as we can say brackets and explore ou…"
+matched cue : 18, at 01:38
+cue text    : "Perfect, so you are basically going to use your parameters as we can say brackets and"
+pinpointMs  : 98960  →  01:38       exactQuote = true
+narrowing   : 71 s span → 1 line
+deep link   : #/lesson/expo-mastery:module-4--3-dynamic-routes?t=98960&c=18
+```
+
+Both matched exactly. Citing the chunk alone would have pointed the reader at a 90-second and a
+71-second stretch; the quote match turns each into a single spoken line.
+
+Note that citation [1]'s quote spans cues 2–3, and the pinpoint resolves to cue **2** — the cue where
+the sentence *begins*, which is where the reader should land.
+
+## What the UI does with it
+
+The citation renders as a chip reading `MODULE 4 / Dynamic Routes · 00:07`. Clicking it opens the
+transcript pane and:
+
+- washes **cues 0–15** in accent colour — the chunk the answer was drawn from
+- gives **cue 2** a solid playhead edge, a gutter marker, and browser focus
+- scrolls that cue to the middle of the pane
+- announces "Jumped to 00:07 in Dynamic Routes" to assistive technology
+- rewrites the URL to the deep link above, so the position is shareable
+
+Two levels of highlight, because they answer different questions: *which passage supports this* and
+*which line said it*.
+
+---
+
+# Part 3 — The other two routes
+
+The same classify call routes questions away from retrieval entirely when it shouldn't run.
+
+**A question about the course's shape**
+
+```
+❯ Module 5 me kitne lessons hain?
+
+allowed = true   intent = metadata   (2292 ms)
+→ answerFromCatalog();  0 embeddings, 0 vector searches
+```
+
+Answered from the syllabus instead — 5,376 characters, roughly 1,344 tokens, handed to the model whole:
+
+```
+COURSE: Expo Mastery (87 lessons)
+  Module 1 — 3 lesson(s)
+    1. What Is Mobile Development (7 min)
+    2. React Native vs Expo (13 min)
+    3. Setting Up env Creating First Expo Project (13 min)
+  Module 1 · HC — 2 lesson(s)
+  …
+```
+
+This path exists because the transcripts don't contain the syllabus. Sent through retrieval, "how many
+lessons are in module 5" searched 1382 chunks of speech for a fact that was never spoken aloud, and
+answered wrongly. Putting the whole syllabus in the prompt is cheaper than a query language and covers
+every phrasing without enumerating question types.
+
+**An off-topic question**
+
+```
+❯ aaj Delhi me mausam kaisa hai?
+
+allowed = false   (1559 ms)
+refusal : "I'm here to answer questions about mobile app development and the course, not about the weather."
+→ blocked;  0 further calls, 0 searches
+```
+
+One call, then it stops. (`intent` is also populated on a blocked result, but it is meaningless there —
+nothing downstream reads it.)
+
+The gate is tuned to reject *this*, not to guess the syllabus. "How do I use useState?" is allowed
+even if the course never covers it, because the answering step will say so honestly. Wrongly refusing
+a real question is a worse failure than answering "not covered".
+
+---
+
+# Part 4 — A compound question
+
+Same pipeline, but the question genuinely asks two things:
+
+```
+❯ How do dynamic routes work and how do I add authentication in Expo?
+
+isCompound : true
+rewritten  : "How do dynamic routes work in Expo, and how can I add authentication to my Expo app?"
+stepBack   : "What are the key concepts of routing and authentication in mobile app development
+              with Expo and React Native?"
+subQuery   : "What are the steps to implement authentication in an Expo app?"
+variants   : 4
+```
+
+The sub-query targets **authentication** — the intent the original phrasing represents most weakly,
+since "dynamic routes" leads the sentence and dominates its embedding. In a separate run this question
+returned citations from two different modules, Module 4 for routing and Module 13 for auth, which is
+precisely the job the fourth variant exists to do.
+
+Compare with Part 2, where the same machinery produced no sub-query at all. Same number of LLM calls
+either way — the flag only decides whether a fourth *embedding* and search happen.
+
+---
+
+# What this run cost
+
+Per content question: **4 chat calls + 1 batched embedding call**.
+
+| Stage | Calls | Notes |
 |---|---|---|
-| 0 | 1000 | `1. Overview Zephyrite is a distributed message bus designed for low-latency…` |
-| 1 | 998 | `ts client identifier and the protocol version it speaks. The broker replies…` |
-| 2 | 996 | `nsidered committed and the producer receives a confirmation. If the quorum…` |
-| 3 | 998 | `fully replicated, which is why a lagging replica can cause disk usage to grow…` |
-| 4 | 304 | `licensing The maintainer of the Zephyrite project is Ravindra Kulkarni…` |
+| maskPII | 0 | regex |
+| classifyQuery | 1 chat | gate + routing together |
+| queryRewriting | 1 chat | parallel with HyDE |
+| hydeDocument | 1 chat | parallel with rewriting |
+| embed variants | 1 embedding | 3 texts in one request |
+| search | 0 | Qdrant, not OpenAI |
+| RRF | 0 | arithmetic |
+| answer | 1 chat | ~1,379 tokens of context |
+| pinpointSentence | 0 | token overlap, local |
 
-### What the overlap looks like
+Roughly **$0.0007** per content question at current `gpt-4o-mini` + `text-embedding-3-small` pricing —
+about 1,400 questions per dollar. A catalog question is about half that; a blocked one is a tenth.
+Indexing the entire 87-lesson course cost about **$0.006**, once.
 
-Chunk 1 begins with `ts client identifier` — a fragment of the word *its*. That is not a bug in the
-output, it is the overlap working:
-
-```
-        ┌──────────────── chunk 0 (chars 0…1000) ────────────────┐
-text ───┤                                              ┌─────────┼──────── chunk 1 (chars 800…1798) ────┐
-        └──────────────────────────────────────────────┼─────────┘                                      │
-                                                       └──── these 200 chars appear in BOTH chunks ─────┘
-```
-
-`chunkText()` snaps the **end** of a chunk to a space so words aren't split, then steps back by
-`CHUNK_OVERLAP` (200) to start the next one. That step-back is *not* snapped to a space, which is
-why chunk 1 opens mid-word. Harmless for embeddings — the other 998 characters carry the meaning —
-but worth knowing when you read the raw payloads.
-
-Why overlap at all? Because a sentence that explains the crash-recovery command could otherwise be
-cut in half by a chunk boundary, leaving neither chunk able to answer the question. With overlap,
-every sentence appears whole in at least one chunk.
+Wall clock for this run: 3.3 s to classify, 23.1 s for the content pipeline. That is on the slow side
+— other runs of the same question completed in 10–12 s. The dominant term is the four sequential-ish
+model calls, not retrieval.
 
 ---
 
-## Stage 1 — Query expansion (1 question → 6 variants)
-
-Two LLM calls fire **in parallel** (`Promise.all`), which is why this stage costs 3,930 ms instead
-of the sum of both.
-
-```
-                    "why does zephyrite lose data when a node crashes and how do i fix it"
-                                          │
-                    ┌─────────────────────┴─────────────────────┐
-                    ▼                                           ▼
-        queryRewriting()                                hydeDocument()
-        gpt-4o-mini, strict JSON schema                 gpt-4o-mini, free text
-        temperature 0.2                                 temperature 0.3
-                    │                                           │
-        ┌───────────┼───────────┐                               │
-        ▼           ▼           ▼                               ▼
-    rewritten   stepBack   subQueries[3]                       hyde
-```
-
-### 1a. `rewritten`
-
-> **Why does Zephyrite lose data when a node crashes, and how can I fix this issue?**
-
-Capitalisation fixed, comma and question mark added, made a complete sentence. A small change here
-because the input was only lightly malformed — on a typo-heavy query (`"wht is the handshak
-timeout"`) this is where the real repair happens.
-
-### 1b. `stepBack`
-
-> **What are the common causes of data loss in distributed systems like Zephyrite?**
-
-This deliberately *widens* the question. It drops "node crashes" and asks about the general topic.
-The point is to retrieve background/conceptual chunks that never use the user's exact words.
-
-### 1c. `subQueries` — the two-part question gets split
-
-> 1. What mechanisms does Zephyrite use to handle node crashes?
-> 2. What are the best practices for data recovery in Zephyrite?
-> 3. How can I implement redundancy to prevent data loss in Zephyrite?
-
-The original asked **two things** — *why does it happen* and *how do I fix it*. A single embedding of
-that sentence is a blend of both halves and sits at neither. Sub-queries give each half its own
-search.
-
-### 1d. `hyde` — the hypothetical answer
-
-> Zephyrite, a distributed data storage system, may lose data during a node crash due to its reliance
-> on a consensus mechanism that requires multiple nodes to agree on the state of the data. If a node
-> fails before it can replicate or synchronize its data with others, that information may be lost. To
-> mitigate this issue, implement regular data backups, increase the replication factor… employing a
-> distributed logging system can help in recovering lost data by replaying logs from surviving nodes.
-
-**This passage is largely wrong.** The real handbook says nothing about backups or replication
-factors; the actual cause is a damaged write-ahead-log tail. And that is completely fine — read on.
-
-```
-   Why HyDE works, in one picture:
-
-   vector space
-   ─────────────────────────────────────────────────────────
-        ?  questions live over here
-        ?  ("why does X fail?")
-                                  ▪ ▪ ▪  documents live over there
-                                  ▪ ▪ ▪  ("X fails when the log tail
-                                  ▪ ▪ ▪   is damaged by an unclean…")
-
-   Embedding the question searches from the "?" region.
-   Embedding a fake ANSWER searches from the "▪" region —
-   same neighbourhood as the real documents.
-```
-
-HyDE's text is used **only to produce a search vector**. It never enters the final prompt, so its
-invented facts cannot reach the user. Being wrong about specifics but right about *shape and
-vocabulary* ("node crash", "replaying logs", "recover") is enough to land in the right region.
-
----
-
-## Stage 2 — Embedding (6 texts → 6 vectors)
-
-```
-6 variant texts ──► embedTexts() ──► ONE API call ──► 6 × 1536 floats
-                    text-embedding-3-small                    481 ms
-```
-
-All six go in a single batched request rather than six separate ones. `embedTexts()` batches in
-groups of 100, so even a 300-chunk PDF is only three calls.
-
----
-
-## Stage 3 — Six searches, run in parallel
-
-Each vector gets its own Qdrant search with `limit = RETRIEVAL_TOP_K = 4`.
-
-```
-rewritten  ──►┐
-stepBack   ──►│
-hyde       ──►├──► Promise.all( 6 × qdrant.search ) ──► 6 ranked lists
-subQuery1  ──►│         cosine similarity                 4 hits each
-subQuery2  ──►│                                           = 24 hits
-subQuery3  ──►┘                                              32 ms
-```
-
-The full result — which chunk each variant ranked where, with its raw cosine score:
-
-| Variant | rank 1 | rank 2 | rank 3 | rank 4 |
-|---|---|---|---|---|
-| `rewritten` | **c3** 0.7244 | c2 0.6634 | c0 0.5338 | c1 0.4517 |
-| `stepBack` | **c3** 0.6911 | c2 0.6316 | c0 0.6005 | c1 0.4782 |
-| `hyde` | **c3** 0.7173 | c2 0.7032 | c0 0.5667 | c1 0.4741 |
-| `subQuery1` | **c3** 0.6855 | c2 0.6631 | c0 0.6128 | c1 0.5148 |
-| `subQuery2` | **c3** 0.6878 | c2 0.5893 | c0 0.5268 | **c4** 0.4805 |
-| `subQuery3` | **c3** 0.6724 | c2 0.6300 | c0 0.5812 | c1 0.4831 |
-
-Two things to read out of this table:
-
-1. **Chunk 3 won every single list.** Chunk 3 is the crash-recovery section — it contains
-   `zephctl repair --wal zeph-wal`. Six independent formulations of the question all agreed. That
-   is a strong signal, and it is exactly the signal RRF is built to reward.
-2. **`subQuery2` disagreed at rank 4.** Every other variant put chunk 1 (the handshake section)
-   fourth; `subQuery2` ("best practices for data recovery") pulled chunk 4 (licensing/maintainer)
-   instead. One variant found something the other five never saw — this is the coverage that
-   multi-query retrieval buys you.
-
----
-
-## Stage 4 — Reciprocal Rank Fusion
-
-Now six ranked lists must become one. RRF ignores the raw cosine scores entirely and uses only
-**rank position**:
-
-```
-                              1
-     score(chunk)  =  Σ  ───────────        over every list the chunk appears in
-                    lists   k + rank         k = RRF_K = 60
-```
-
-### Why throw the scores away?
-
-Cosine scores from different query vectors aren't comparable. `hyde` scored 0.7032 on chunk 2 while
-`subQuery2` scored 0.5893 on the *same chunk* — the number reflects how the variant was phrased as
-much as how relevant the chunk is. Rank ("this list's 2nd best") survives that; the raw number
-doesn't. The `+ k` term flattens the curve, so rank 1 (1/61) is only slightly better than rank 4
-(1/64) — a chunk wins by appearing **often**, not by topping one list.
-
-### The arithmetic, worked out
-
-| Chunk | Appeared in | At ranks | Sum | RRF score |
-|---|---|---|---|---|
-| **c3** | 6 of 6 lists | 1,1,1,1,1,1 | 6 × 1/61 | **0.09836** |
-| **c2** | 6 of 6 lists | 2,2,2,2,2,2 | 6 × 1/62 | **0.09677** |
-| **c0** | 6 of 6 lists | 3,3,3,3,3,3 | 6 × 1/63 | **0.09524** |
-| **c1** | 5 of 6 lists | 4,4,4,4,4 | 5 × 1/64 | **0.07813** |
-| **c4** | 1 of 6 lists | 4 | 1 × 1/64 | **0.01563** |
-
-Look at the bottom two rows — this is the whole idea of RRF in two lines. Chunk 1 and chunk 4 were
-both ranked **4th** by the variants that found them. Identical rank, identical per-hit contribution
-of 1/64. But chunk 1 was found by five variants and chunk 4 by one, so chunk 1 scores **5× higher**.
-Consensus, not any single opinion, decides the order.
-
-```
-   24 hits (with duplicates)
-        │
-        ├─ group by chunk id, sum 1/(60+rank)
-        ▼
-   5 unique chunks, re-ranked
-        │
-        ├─ slice(0, RETRIEVAL_FINAL_K = 5)
-        ▼
-   5 chunks kept  ──►  4,519 characters of context
-```
-
-### So which chunks actually reached the model?
-
-Reading it straight off the Stage 3 table: six lists × four hits = **24 hits**, but only **five
-distinct chunks** (c0, c1, c2, c3, c4). The same chunks keep reappearing across variants — that
-repetition *is* the signal RRF measures. After deduping and sorting by fused score the order is:
-
-```
-   c3  →  c2  →  c0  →  c1  →  c4
- 0.0984  0.0968  0.0950  0.0781  0.0156
-```
-
-`RETRIEVAL_FINAL_K` is 5 and there were exactly 5 candidates, so **all five were kept**.
-
-**But look at how c4 got in.** Only `subQuery2` ever found it, at rank 4. Its fused score is
-**five times lower** than c1's (0.0156 vs 0.0781). It made the cut because there was nothing else
-competing for the fifth slot — not because it earned it.
-
-On a real corpus that changes completely. With 600 chunks in the index the six variants would surface
-perhaps 20 distinct candidates, and `slice(0, 5)` would drop c4 long before it reached the prompt.
-That is exactly RRF's job: keep a chunk that only one variant liked *below* the chunks several
-variants agreed on.
-
-You can see this in the UI — c4's row in the Retrieval Trace shows a single `subQuery2` chip and a
-visibly stubby bar, while the rows above it carry all six chips.
-
----
-
-## Stage 5 — Generation
-
-The kept chunks are formatted and sent with a deliberately strict system prompt:
-
-```
-System: "Answer the user's question using ONLY the provided context.
-         If the answer is not contained in the context, say you don't know. Be concise."
-
-User:    Context:
-         [Chunk 1] (source: zephyrite-handbook.pdf)
-         fully replicated, which is why a lagging replica…
-         [Chunk 2] …
-         … 4,519 characters total …
-
-         Question: why does zephyrite lose data when a node crashes and how do i fix it
-```
-
-### Wait — isn't 4,519 characters the *entire document*?
-
-Yes, and that is worth being precise about, because it looks like retrieval achieved nothing.
-
-The pipeline sends **only the kept chunks** — never the source file. It just happens that this
-document contains exactly 5 chunks and `RETRIEVAL_FINAL_K` is exactly 5, so "the top 5" and "all of
-it" are the same set here. The number checks out to the character:
-
-```
-  chunk text     1000 + 998 + 996 + 998 + 304        = 4,296
-  5 × header     "[Chunk 1] (source: zephyrite-handbook.pdf)\n"
-                 43 chars each                       =   215
-  4 × separator  "\n\n"                              =     8
-                                                       ───────
-                                               total   = 4,519   ← the figure above
-```
-
-Nothing extra is smuggled in: the context is the five chunk bodies plus their labels.
-
-What the same code does on a document that isn't a toy:
-
-| | This test document | A 200-page PDF |
-|---|---|---|
-| Chunks in the index | 5 | ~600 |
-| Characters in the index | ~4,300 | ~600,000 |
-| Characters sent to the LLM | 4,519 | ~5,000 |
-| **Reduction** | **0%** | **~99%** |
-
-The prompt size is governed by `RETRIEVAL_FINAL_K`, not by the size of the corpus — five chunks cost
-the same whether the index holds 5 documents or 5,000. That is the whole economic point of
-retrieval: prompt cost stays flat while the knowledge base grows.
-
-If you want a smaller context, lower `RETRIEVAL_FINAL_K` in `.env`. Lower it too far and multi-part
-questions start losing one of their halves — this question needed both the crash-recovery chunk
-(c3) *and* the surrounding context to answer fully.
-
-**The answer produced:**
-
-> Zephyrite loses data when a node crashes because the message may have been written to the log, but
-> the log tail could be damaged by an unclean shutdown, leading to apparent data loss. To fix it, you
-> can run the command `zephctl repair --wal zeph-wal`, which truncates the log to the last valid
-> record and re-syncs the missing messages from a healthy replica.
-
-Both halves of the two-part question answered, both correct against the source document, and the
-exact command recovered. Cost: **1,009 prompt tokens + 82 completion tokens**.
-
-Compare this against Stage 1d — the HyDE passage confidently claimed the fix was "regular data
-backups" and "increase the replication factor". None of that invention survived into the answer,
-because HyDE only ever steered the search.
-
----
-
-## Where the time went
-
-| Stage | Time | Share |
-|---|---|---|
-| Query expansion (2 LLM calls, parallel) | 3,930 ms | 57% |
-| Embedding (1 batched call) | 481 ms | 7% |
-| Vector search (6, parallel) | **32 ms** | 0.5% |
-| RRF fusion | <1 ms | ~0% |
-| Generation (1 LLM call) | 2,454 ms | 36% |
-| **Total** | **≈ 6.9 s** | |
-
-The lesson: **the vector database is not the bottleneck.** Six searches cost 32 ms combined. Over
-99% of the wall-clock time is spent waiting on OpenAI. If you ever want to make this faster, cut LLM
-round-trips — don't optimise Qdrant.
-
-The single most expensive item is Stage 1, and it is *optional*. Skipping expansion would drop
-~4 seconds and 2 LLM calls per query.
-
----
-
-## Honest comparison: did the advanced pipeline actually help here?
-
-The same trace also ran the **old** single-vector search — embed the raw question, one Qdrant
-search — for comparison:
-
-| | Basic (1 vector) | Advanced (6 vectors + RRF) |
-|---|---|---|
-| Ranking | c3, c2, c0, c1 | c3, c2, c0, c1, **c4** |
-| Chunks retrieved | 4 | 5 |
-| LLM calls | 1 | 3 |
-| Wall clock | ≈ 2.7 s | ≈ 6.9 s |
-
-**The top 4 are identical.** On this document the advanced pipeline produced the same ordering as
-the basic one, plus one extra chunk. It cost 2 extra LLM calls and ~4 extra seconds to get there.
-
-That is a real result and it should not be hidden. Here is why it happened, and it is entirely about
-the size of the test corpus:
-
-- The handbook has only **5 chunks total**. `RETRIEVAL_FINAL_K` is 5. The pipeline therefore
-  retrieved **the entire document** — there was nothing to discriminate between.
-- With 5 chunks, all six variants were fishing in the same tiny pond, so they naturally agreed.
-  RRF's job is to resolve *disagreement*, and there was almost none to resolve.
-- The one place a difference did appear — `subQuery2` surfacing chunk 4 — is a miniature version of
-  the real benefit.
-
-### What this example does NOT prove
-
-It does not prove the advanced pipeline retrieves better than the basic one. Demonstrating that
-needs a corpus large enough that the top-4 is a genuine choice — hundreds or thousands of chunks
-across many documents, where variants disagree and consensus carries information.
-
-What this example **does** prove is that every stage executes correctly: expansion produces sensible
-variants, all six searches run, RRF arithmetic is exact, HyDE's hallucinations stay out of the
-answer, and the final answer is grounded in the source.
-
-### So when is the expansion worth paying for?
-
-| Situation | Worth it? |
-|---|---|
-| Small corpus (a handful of chunks) | ✗ — everything is retrieved anyway |
-| Simple keyword lookup ("what is the timeout?") | ✗ — direct match already works |
-| Large corpus, vague or conversational query | ✓ — expansion finds the right region |
-| Multi-part question | ✓ — sub-queries retrieve each part separately |
-| Query vocabulary differs from document vocabulary | ✓ — this is HyDE's core case |
-| Latency-sensitive or high-volume | ✗ — 3× the LLM cost per query |
-
----
-
-## Reproducing this
-
-The quickest way is the UI — `npm run ui`, drop the file on the left rail, ask, then expand the
-**Retrieval trace** under the answer. It shows the same six variants and per-chunk scores as the
-tables above. Over HTTP:
+# Reproduce this yourself
 
 ```bash
-npm run services:up      # Qdrant on 6333 (Redis runs natively on 6379)
-npm run dev              # API   on 8000
-npm run worker           # worker — the pipeline runs HERE
-
-# index a document
-curl -F "file=@handbook.pdf" http://localhost:8000/api/index
-
-# ask, then poll
-curl -X POST http://localhost:8000/api/query -H "Content-Type: application/json" \
-     -d '{"query":"why does zephyrite lose data when a node crashes and how do i fix it"}'
-curl http://localhost:8000/api/query/1
+cp .env.example .env        # add OPENAI_API_KEY
+npm install && npm run ui:install
+npm run services:up         # Qdrant on :6333
+npm run worker              # terminal 1
+npm start                   # terminal 2  → http://localhost:8000
+npm run ingest              # one-off; skips unchanged lessons on re-runs
 ```
 
-The `/api/query/:id` response carries the pipeline's own trace: `queries` shows all six variants that
-were searched, and each source's `matchedBy` lists which variants found it — the same data the
-tables above are built from.
+Then ask the same question in the UI and open **Retrieval trace** under the answer. It shows the
+variants that were searched, which variant found which chunk, and the fused score that ordered them —
+the same data as Steps 3, 5 and 6 above.
 
+**Your numbers will differ.** Cue timings, chunk boundaries, payloads, cosine scores and RRF
+arithmetic are all deterministic and should reproduce exactly. The model-generated text — the rewrite,
+the step-back, the HyDE passage, the answer wording — runs at temperature above zero, so it varies run
+to run. The `isCompound` decision and the citation targets were stable across every run tested.
 
+## Appendix — inspecting the vectors directly
 
-### Watching the queues
+Qdrant ships a dashboard at <http://localhost:6333/dashboard>. Open the **Collections** tab, pick
+`course_transcripts`, and browse points to see each payload (`lessonTitle`, `startMs`, `cueStart`, the
+chunk text) and run vector searches by hand.
 
-Two dashboards, both read-only views onto what the pipeline is actually doing:
-
-| | URL | Shows |
-|---|---|---|
-| **Bull Board** | http://localhost:8000/admin/queues | Both BullMQ queues — job counts by state, and per job its `data`, `returnvalue`, failure reason + stack, timings, and retry/clean buttons |
-| **Qdrant** | http://localhost:6333/dashboard | The `documents` collection — point count, vector config, and the stored chunks with their payloads |
-
-Bull Board is the fastest way to answer "why didn't my PDF index?" — open the **Failed** tab and read
-the error. A common one is `No extractable text found`, which means the PDF is scanned/image-only
-and has no text layer for `pdf-parse` to read; that needs OCR, which this pipeline doesn't do.
-
-> ⚠️ Bull Board has **no authentication**. It exposes job payloads and lets anyone retry or delete
-> jobs. Fine on localhost; put it behind a proxy or drop the route before exposing this server.
-> The path is configurable with `QUEUE_DASHBOARD_PATH`.
-
-Same information from the terminal, if you prefer:
+Or from the shell:
 
 ```bash
-redis-cli LLEN  bull:file-indexing:wait        # queued
-redis-cli ZCARD bull:file-indexing:failed      # failures
-redis-cli ZRANGE bull:file-indexing:failed 0 -1        # their ids
-redis-cli HGET  bull:file-indexing:14 failedReason     # why one failed
-redis-cli XREVRANGE bull:query:events + - COUNT 10     # recent state changes
+# collection summary
+curl -s localhost:6333/collections/course_transcripts | python3 -m json.tool
 
-**Reading the numbers in a response:**
-
-| Field | Meaning |
-|---|---|
-| `score` | Best raw cosine similarity across variants. Comparable *within* one list only |
-| `rrfScore` | Fused rank score. **This is what decided the ordering** |
-| `matchedBy` | Which variants surfaced this chunk. Length 1 = only one variant found it — treat with suspicion; length 6 = unanimous |
-
-The code itself: [src/retriever.js](src/retriever.js) (stages 1–5), [src/indexer.js](src/indexer.js)
-(stage 0). See [README.md](README.md) for setup and the API reference.
+# one lesson's chunks, in order
+curl -s localhost:6333/collections/course_transcripts/points/scroll \
+  -H 'content-type: application/json' -d '{
+    "limit": 10, "with_payload": true, "with_vector": false,
+    "filter": {"must": [{"key": "lessonId", "match": {"value":
+      "expo-mastery:module-4--3-dynamic-routes"}}]}
+  }' | python3 -m json.tool
+```

@@ -23,6 +23,11 @@ Ask in English or Hinglish; the answer comes back in whichever you used.
 Nothing blocks the HTTP request: parsing, embedding and model calls all run in a separate worker
 process, so the API stays responsive and failed jobs retry on their own.
 
+> 📘 **[PIPELINE-EXAMPLE.md](PIPELINE-EXAMPLE.md)** — one real question traced through every stage, with
+> the actual cue timings, chunk boundaries, Qdrant payload, per-variant rankings, RRF arithmetic and
+> quote-to-timestamp match from a live run. Start there if you want to understand *how* it works rather
+> than how to run it.
+
 ---
 
 ## Contents
