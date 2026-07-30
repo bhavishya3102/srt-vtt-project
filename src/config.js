@@ -12,10 +12,22 @@ export const config = {
   port: Number(process.env.PORT) || 8000,
 
   course: {
-    // Folder holding the `module N/<lesson>/<lesson>.srt` tree.
+    // Either a single course (`<path>/module 1/<lesson>/<lesson>.srt`) or a
+    // parent of several (`<path>/<course>/module 1/...`). The layout is detected
+    // automatically, so existing folders never have to be moved.
     path: fromRoot(
       process.env.COURSE_PATH || "class_subtitle_lyst1784566935215/class-subtitle"
     ),
+    // Display name when the root is a single course. Defaults to the folder
+    // name, which for a platform export is usually not presentable.
+    name: process.env.COURSE_NAME || "Expo Mastery",
+    // Optional overlay of titles for lessons whose folder name carried none
+    // (`chapter-3_epm`). Written by scripts/generate-titles.js; absent by default.
+    titlesFile: fromRoot(process.env.TITLES_FILE || "data/lesson-titles.json"),
+    // Read each lesson's last cue at startup so the catalog knows lesson
+    // lengths. Measured at ~199ms cold / ~97ms warm for 87 files, which is
+    // cheap enough to leave on; it makes "which lecture is longest?" answerable.
+    scanDurations: process.env.SCAN_DURATIONS !== "false",
   },
 
   redis: {
@@ -37,12 +49,23 @@ export const config = {
   },
 
   chunking: {
-    // Cues are grouped into windows of roughly this many characters. Bigger
-    // windows read better but make the cited timestamp range less precise.
-    chunkChars: Number(process.env.CHUNK_CHARS) || 1200,
-    // Characters of overlap so an answer that straddles a window boundary is
-    // still retrievable from a single chunk.
+    // Chunks aim for `targetChars` and are never allowed past `maxChars`.
+    // Bigger chunks read better but make the cited time range less precise.
+    // Measured on this corpus: the average cue is 52 chars, so 1200 is about
+    // 23 cues, i.e. 60-70 seconds of speech.
+    targetChars: Number(process.env.CHUNK_TARGET_CHARS) || 1200,
+    minChars: Number(process.env.CHUNK_MIN_CHARS) || 600,
+    maxChars: Number(process.env.CHUNK_MAX_CHARS) || 1800,
+    // Whole trailing sentences repeated at the head of the next chunk, so an
+    // answer straddling a boundary is still retrievable from one chunk.
     overlapChars: Number(process.env.CHUNK_OVERLAP_CHARS) || 240,
+    // Silence long enough to count as a structural break. In this corpus a gap
+    // this long occurs every ~871 chars — just under the chunk target, so most
+    // chunks can close on a genuine pause. (The median gap is only 359ms.)
+    strongPauseMs: Number(process.env.CHUNK_STRONG_PAUSE_MS) || 1500,
+    // 25% of cues carry no sentence-ending punctuation; cap the resulting runs
+    // so one unpunctuated stretch can't become a single enormous "sentence".
+    maxSentenceChars: Number(process.env.MAX_SENTENCE_CHARS) || 400,
   },
 
   // Where the Bull Board queue dashboard is mounted. No auth — don't expose it.

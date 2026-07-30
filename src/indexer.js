@@ -1,126 +1,158 @@
 import fs from "node:fs/promises";
-import path from "node:path";
 import crypto from "node:crypto";
-// Import the lib entry directly to avoid pdf-parse's debug-mode file read on import.
-import pdfParse from "pdf-parse/lib/pdf-parse.js";
-import { config } from "./config.js";
-import { qdrant, ensureCollection } from "./qdrant.js";
+import { findLesson } from "./catalog.js";
+import { parseSubtitles } from "./subtitles.js";
+import { chunkCues } from "./chunker.js";
 import { embedTexts } from "./openai.js";
+import { qdrant, ensureCollection, deleteLessonPoints, isMissingCollection } from "./qdrant.js";
+import { config } from "./config.js";
 
 /**
- * Thrown when a document can never be indexed no matter how many times we try
- * (wrong file type, no extractable text). The worker turns this into a BullMQ
- * UnrecoverableError so the job fails immediately instead of retrying.
+ * Indexes one lesson: read subtitles -> chunk -> embed -> upsert into Qdrant.
+ *
+ * Every point carries the module, the lesson and the exact millisecond range its
+ * text was spoken in. That payload is what makes a citation clickable later —
+ * without it the retriever could say *what* the answer is but never *where* in
+ * the course to find it.
  */
-export class UnprocessableDocumentError extends Error {
+
+/**
+ * Thrown when a lesson can never be indexed however often we retry (missing
+ * file, no parsable cues). The worker converts this into a BullMQ
+ * UnrecoverableError so the job fails once instead of burning every attempt.
+ */
+export class UnprocessableLessonError extends Error {
   constructor(message) {
     super(message);
-    this.name = "UnprocessableDocumentError";
+    this.name = "UnprocessableLessonError";
   }
 }
 
-/** Extensions we can turn into text, and the label shown in the UI. */
-export const SUPPORTED_EXTENSIONS = {
-  ".pdf": "PDF",
-  ".md": "Markdown",
-  ".markdown": "Markdown",
-  ".txt": "Text",
-};
-
-/** Read a PDF from disk and return its raw text. */
-async function readPdfText(filePath) {
-  const buffer = await fs.readFile(filePath);
-  const data = await pdfParse(buffer);
-  return data.text;
+/**
+ * Deterministic UUID for a chunk, so re-indexing overwrites in place instead of
+ * accumulating duplicates. Qdrant requires point ids to be a UUID or an integer.
+ */
+function chunkId(lessonId, chunkIndex) {
+  const hex = crypto.createHash("sha1").update(`${lessonId}#${chunkIndex}`).digest("hex");
+  return [
+    hex.slice(0, 8),
+    hex.slice(8, 12),
+    hex.slice(12, 16),
+    hex.slice(16, 20),
+    hex.slice(20, 32),
+  ].join("-");
 }
 
 /**
- * Read a plain-text/Markdown file. Markdown syntax is left in place — the
- * embedding model handles it fine, and headings carry real meaning.
+ * The contentHash already stored for this lesson, or null if it isn't indexed.
+ * Lets a re-run skip lessons whose transcript hasn't changed, which is the
+ * difference between re-embedding the whole course and paying nothing.
  */
-async function readPlainText(filePath) {
-  return fs.readFile(filePath, "utf8");
-}
-
-/** Dispatch on file extension. Throws for anything we can't parse. */
-async function readDocumentText(filePath) {
-  const ext = path.extname(filePath).toLowerCase();
-  if (ext === ".pdf") return readPdfText(filePath);
-  if (ext in SUPPORTED_EXTENSIONS) return readPlainText(filePath);
-  throw new UnprocessableDocumentError(`Unsupported file type: ${ext || "(none)"}`);
-}
-
-/**
- * Split text into overlapping chunks (~chunkSize chars, chunkOverlap overlap),
- * breaking on whitespace boundaries where possible.
- */
-export function chunkText(text, chunkSize = config.chunking.chunkSize, overlap = config.chunking.chunkOverlap) {
-  const clean = text.replace(/\s+/g, " ").trim();
-  if (!clean) return [];
-
-  const chunks = [];
-  let start = 0;
-
-  while (start < clean.length) {
-    let end = Math.min(start + chunkSize, clean.length);
-
-    // Try to end on a space so we don't cut words in half.
-    if (end < clean.length) {
-      const lastSpace = clean.lastIndexOf(" ", end);
-      if (lastSpace > start) end = lastSpace;
-    }
-
-    const chunk = clean.slice(start, end).trim();
-    if (chunk) chunks.push(chunk);
-
-    if (end >= clean.length) break;
-    start = end - overlap; // step forward with overlap
-    if (start < 0) start = 0;
+async function storedHash(lessonId) {
+  try {
+    const res = await qdrant.scroll(config.qdrant.collection, {
+      limit: 1,
+      filter: { must: [{ key: "lessonId", match: { value: lessonId } }] },
+      with_payload: ["contentHash"],
+      with_vector: false,
+    });
+    return res.points[0]?.payload?.contentHash ?? null;
+  } catch (err) {
+    if (isMissingCollection(err)) return null;
+    throw err;
   }
-
-  return chunks;
 }
 
 /**
- * Full indexing pipeline for a single uploaded document:
- * read -> chunk -> embed -> upsert into Qdrant.
+ * Index a single lesson.
  *
- * Every chunk carries the same `docId` so the whole document can be deleted
- * later with one filtered delete, even if two uploads share a filename.
- *
- * @param {{ filePath: string, originalName: string, docId?: string }} input
+ * @param {{ lessonId: string, force?: boolean }} input
+ * @returns {Promise<{lessonId, title, chunks, cues, skipped, contentHash, indexedAt}>}
  */
-export async function indexDocument({ filePath, originalName, docId }) {
-  const collection = await ensureCollection();
+export async function indexLesson({ lessonId, force = false }) {
+  const lesson = await findLesson(lessonId);
+  if (!lesson) throw new UnprocessableLessonError(`Unknown lesson id: ${lessonId}`);
 
-  const text = await readDocumentText(filePath);
-  const chunks = chunkText(text);
-
-  if (chunks.length === 0) {
-    throw new UnprocessableDocumentError(
-      "No extractable text found — the file may be empty or a scanned/image-only PDF"
+  let raw;
+  try {
+    raw = await fs.readFile(lesson.filePath, "utf8");
+  } catch (err) {
+    throw new UnprocessableLessonError(
+      `Can't read subtitles for "${lesson.title}": ${err.message}`
     );
   }
 
-  const vectors = await embedTexts(chunks);
+  const contentHash = crypto.createHash("sha256").update(raw).digest("hex");
+
+  if (!force && (await storedHash(lessonId)) === contentHash) {
+    return {
+      lessonId,
+      title: lesson.title,
+      chunks: 0,
+      cues: 0,
+      skipped: true,
+      contentHash,
+      indexedAt: null,
+    };
+  }
+
+  const cues = parseSubtitles(raw);
+  if (cues.length === 0) {
+    throw new UnprocessableLessonError(
+      `No subtitle cues found in "${lesson.title}" — the file may be empty or malformed`
+    );
+  }
+
+  const chunks = chunkCues(cues);
+  if (chunks.length === 0) {
+    throw new UnprocessableLessonError(`"${lesson.title}" produced no chunks`);
+  }
+
+  const collection = await ensureCollection();
+  const vectors = await embedTexts(chunks.map((c) => c.text));
   const indexedAt = new Date().toISOString();
-  const kind = SUPPORTED_EXTENSIONS[path.extname(filePath).toLowerCase()] ?? "Unknown";
 
   const points = chunks.map((chunk, i) => ({
-    id: crypto.randomUUID(),
+    id: chunkId(lessonId, i),
     vector: vectors[i],
     payload: {
-      text: chunk,
-      source: originalName,
-      docId: docId ?? crypto.randomUUID(),
-      kind,
-      filePath,
+      text: chunk.text,
+
+      // where in the course this came from
+      courseId: lesson.courseId,
+      lessonId: lesson.id,
+      moduleId: lesson.moduleId,
+      moduleTitle: lesson.moduleTitle,
+      lessonTitle: lesson.title,
+      lessonOrder: lesson.lessonOrder,
+      moduleOrder: lesson.moduleOrder,
+      kind: lesson.kind,
+
+      // when it was spoken — the basis of every clickable citation
+      startMs: chunk.startMs,
+      endMs: chunk.endMs,
+      cueStart: chunk.cueStart,
+      cueEnd: chunk.cueEnd,
+
       chunkIndex: i,
+      chunkCount: chunks.length,
+      contentHash,
       indexedAt,
     },
   }));
 
+  // Replace rather than merge: chunk boundaries shift whenever the chunker
+  // changes, so stale points from an earlier run would otherwise linger.
+  await deleteLessonPoints(lessonId);
   await qdrant.upsert(collection, { wait: true, points });
 
-  return { chunks: chunks.length, collection, kind, indexedAt };
+  return {
+    lessonId,
+    title: lesson.title,
+    chunks: chunks.length,
+    cues: cues.length,
+    skipped: false,
+    contentHash,
+    indexedAt,
+  };
 }

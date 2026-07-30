@@ -12,28 +12,36 @@ export const indexingQueue = new Queue(INDEXING_QUEUE, { connection });
 export const queryQueue = new Queue(QUERY_QUEUE, { connection });
 
 /**
- * Enqueue a job telling the worker to index an uploaded PDF.
- * @param {{ filePath: string, originalName: string, mimeType: string, size: number }} payload
+ * Enqueue one lesson for indexing.
+ *
+ * The job id is derived from the lesson, so re-running the ingest script can't
+ * queue the same lesson twice — BullMQ ignores a duplicate id while the job is
+ * still retained.
+ *
+ * @param {{ lessonId: string, title?: string, force?: boolean }} payload
  */
 export async function enqueueIndexingJob(payload) {
-  return indexingQueue.add("index-file", payload, {
-    attempts: 3,
-    backoff: { type: "exponential", delay: 2000 },
-    removeOnComplete: 100,
-    removeOnFail: 500,
+  return indexingQueue.add("index-lesson", payload, {
+    jobId: `lesson:${payload.lessonId}${payload.force ? ":force" : ""}`,
+    // Embedding hits a per-minute rate limit, so retry with room to breathe.
+    attempts: 4,
+    backoff: { type: "exponential", delay: 3000 },
+    removeOnComplete: { age: 3600, count: 200 },
+    removeOnFail: { age: 86400, count: 500 },
   });
 }
 
 /**
- * Enqueue a query job. Completed/failed jobs are kept for a while so the
- * client can poll GET /query/:id for the result.
- * @param {{ query: string }} payload
+ * Enqueue a question. Completed jobs are kept for an hour so the client can
+ * poll GET /api/query/:id for the result.
+ *
+ * @param {{ query: string, courseId?: string }} payload
  */
 export async function enqueueQueryJob(payload) {
   return queryQueue.add("run-query", payload, {
     attempts: 2,
     backoff: { type: "exponential", delay: 1000 },
-    removeOnComplete: { age: 3600, count: 1000 }, // keep 1h for polling
+    removeOnComplete: { age: 3600, count: 1000 },
     removeOnFail: { age: 3600, count: 1000 },
   });
 }

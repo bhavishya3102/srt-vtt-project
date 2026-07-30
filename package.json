@@ -1,7 +1,7 @@
 {
-  "name": "advance-rag",
+  "name": "course-qa",
   "version": "1.0.0",
-  "description": "Advanced RAG: PDF upload + async indexing with Qdrant & BullMQ",
+  "description": "Ask your video course anything — grounded answers with module, chapter and a clickable timestamp",
   "license": "ISC",
   "author": "",
   "type": "module",
@@ -10,9 +10,13 @@
     "dev": "node --watch src/index.js",
     "start": "node src/index.js",
     "worker": "node src/worker.js",
+    "ingest": "node scripts/ingest-course.js",
+    "titles:generate": "node scripts/generate-titles.js",
+    "test": "node --test \"test/*.test.js\"",
     "ui": "npm --prefix web run dev",
     "ui:install": "npm --prefix web install",
     "ui:build": "npm --prefix web run build",
+    "ui:lint": "npm --prefix web run lint",
     "services:up": "docker compose up -d",
     "services:down": "docker compose down"
   },
@@ -24,8 +28,6 @@
     "dotenv": "^16.4.7",
     "express": "^4.21.2",
     "ioredis": "^5.4.2",
-    "multer": "^2.0.1",
-    "openai": "^4.77.0",
-    "pdf-parse": "^1.1.1"
+    "openai": "^4.77.0"
   }
 }
