@@ -1,132 +1,175 @@
 .header {
   display: flex;
-  align-items: flex-end;
-  gap: var(--sp-4);
-  padding: var(--sp-5) var(--sp-6) var(--sp-4);
-  border-bottom: 1px solid var(--rule);
-  background: linear-gradient(to bottom, rgba(20, 17, 14, 0.9), transparent);
-  animation: rise var(--slow) var(--ease-out) both;
-}
-
-.mark {
-  display: flex;
-  flex-direction: column;
-  gap: 0.15rem;
-  margin-right: auto;
-}
-
-.eyebrow {
-  font-family: var(--font-mono);
-  font-size: var(--step--2);
-  font-weight: 500;
-  letter-spacing: 0.24em;
-  text-transform: uppercase;
-  color: var(--amber);
-  opacity: 0.85;
-}
-
-.wordmark {
-  font-family: var(--font-display);
-  font-size: var(--step-4);
-  letter-spacing: -0.015em;
-  line-height: 0.95;
-  color: var(--ink);
-}
-
-.wordmark em {
-  font-style: italic;
-  color: var(--amber-bright);
-}
-
-/* --- index meter --- */
-
-.meter {
-  display: flex;
   align-items: center;
-  gap: var(--sp-2);
-  padding-bottom: 0.4rem;
-  font-family: var(--font-mono);
-  font-size: var(--step--1);
-  color: var(--ink-muted);
-  white-space: nowrap;
+  gap: var(--sp-4);
+  padding: var(--sp-3) var(--sp-4);
+  border-bottom: 1px solid var(--rule);
+  background: var(--ground-deep);
 }
 
-.meterText b {
-  font-weight: 600;
-  color: var(--ink-soft);
-}
+/* ------------------------------------------------------------ drawer toggles */
 
-.divider {
-  margin: 0 0.5em;
-  color: var(--ink-faint);
-}
-
-.dot {
-  width: 6px;
-  height: 6px;
-  border-radius: 99px;
-  background: var(--ink-faint);
-  flex: none;
-}
-
-.dot[data-live="true"] {
-  background: var(--sage);
-  box-shadow: 0 0 0 3px rgba(127, 155, 122, 0.16);
-}
-
-/* --- drawer toggle, only on narrow screens --- */
-
-.railToggle {
+/* Both toggles only exist at narrow widths, where the side panels collapse. */
+.railToggle,
+.paneToggle {
   display: none;
-  padding: var(--sp-2);
-  margin-bottom: 0.2rem;
+  place-items: center;
+  width: 28px;
+  height: 28px;
   border: 1px solid var(--rule-strong);
-  border-radius: 3px;
-  transition: border-color var(--fast) var(--ease);
+  border-radius: var(--radius-sm);
+  color: var(--ink-muted);
+  transition:
+    color var(--fast) var(--ease),
+    border-color var(--fast) var(--ease);
 }
 
-.railToggle:hover {
-  border-color: var(--amber-edge);
+.railToggle:hover,
+.paneToggle:hover {
+  color: var(--ink);
+  border-color: var(--rule-bright);
 }
 
 .bars {
   display: grid;
   gap: 3px;
-  width: 16px;
+  width: 13px;
 }
 
 .bars i {
-  height: 1px;
-  background: var(--ink-soft);
+  height: 1.5px;
+  background: currentColor;
+  border-radius: 1px;
 }
 
-@media (max-width: 60rem) {
+/* Two uneven bars, reading as a pane split rather than a menu. */
+.paneIcon {
+  display: flex;
+  gap: 2px;
+  align-items: stretch;
+  width: 13px;
+  height: 11px;
+}
+
+.paneIcon i {
+  background: currentColor;
+  border-radius: 1px;
+}
+
+.paneIcon i:first-child {
+  flex: 2;
+  opacity: 0.45;
+}
+
+.paneIcon i:last-child {
+  flex: 1;
+}
+
+/* ------------------------------------------------------------------ wordmark */
+
+.mark {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-3);
+}
+
+/* A playhead on a track: the app's whole idea in 22 pixels. */
+.glyph {
+  position: relative;
+  display: block;
+  width: 22px;
+  height: 12px;
+}
+
+.glyphTrack {
+  position: absolute;
+  top: 5px;
+  left: 0;
+  width: 100%;
+  height: 2px;
+  background: var(--rule-bright);
+  border-radius: 2px;
+}
+
+.glyphTick {
+  position: absolute;
+  top: 0;
+  left: 62%;
+  width: 2px;
+  height: 12px;
+  background: var(--cue);
+  border-radius: 1px;
+  box-shadow: 0 0 8px var(--cue-glow);
+}
+
+.wordmark {
+  font-size: var(--step-2);
+  font-weight: 700;
+  font-variation-settings: "wdth" 118;
+  letter-spacing: -0.02em;
+  line-height: 1;
+}
+
+.tagline {
+  font-family: var(--font-mono);
+  font-size: var(--step--2);
+  letter-spacing: 0.06em;
+  color: var(--ink-faint);
+}
+
+/* -------------------------------------------------------------------- meter */
+
+.meter {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  margin-left: auto;
+  font-size: var(--step--2);
+  color: var(--ink-muted);
+}
+
+.dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--ink-faint);
+}
+
+.dotLive {
+  background: var(--cue);
+  box-shadow: 0 0 6px var(--cue-glow);
+}
+
+.meterText b {
+  font-weight: 500;
+  color: var(--ink-soft);
+}
+
+.divider {
+  margin: 0 3px;
+  color: var(--ink-faint);
+}
+
+/* ------------------------------------------------------------- responsive */
+
+@media (max-width: 1200px) {
+  .paneToggle {
+    display: grid;
+  }
+}
+
+@media (max-width: 900px) {
   .railToggle {
-    display: block;
+    display: grid;
   }
 
-  .header {
-    align-items: center;
-    padding: var(--sp-4);
-  }
-
-  .wordmark {
-    font-size: var(--step-3);
-  }
-
-  .meter {
+  .tagline {
     display: none;
   }
 }
 
-/* Keyframes must live in this module — see the note in styles/tokens.css. */
-@keyframes rise {
-  from {
-    opacity: 0;
-    transform: translateY(12px);
-  }
-  to {
-    opacity: 1;
-    transform: none;
+@media (max-width: 620px) {
+  .chunks {
+    display: none;
   }
 }

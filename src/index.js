@@ -168,8 +168,15 @@ app.use(config.queueDashboardPath, bullBoard.getRouter());
 // Serve the built React app when it exists (npm run ui:build). In development
 // the Vite dev server proxies /api here instead.
 if (fs.existsSync(clientDist)) {
-  app.use(express.static(clientDist, { index: false, maxAge: "1h" }));
-  app.get(/^(?!\/api\/).*/, (_req, res) => res.sendFile(path.join(clientDist, "index.html")));
+  // Asset filenames are content-hashed, so they can be cached hard and forever.
+  app.use(express.static(clientDist, { index: false, immutable: true, maxAge: "1y" }));
+
+  // index.html must NOT be cached: it is the only file that names the current
+  // asset hashes, so a cached copy pins the browser to a previous build.
+  app.get(/^(?!\/api\/).*/, (_req, res) => {
+    res.set("Cache-Control", "no-cache");
+    res.sendFile(path.join(clientDist, "index.html"));
+  });
 } else {
   app.get("/", (_req, res) =>
     res.status(200).type("text/plain").send("API is running. Build the UI with:  npm run ui:build")

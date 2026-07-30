@@ -1,196 +1,114 @@
-import { useId, useMemo, useState } from "react";
-import { truncate } from "../lib/format";
+import { useState } from "react";
+import { formatTimecode, truncate, variantLabel } from "../lib/format";
 import styles from "./RetrievalTrace.module.css";
 
 /**
- * What each query variant is for. Shown next to the variant so the trace
- * teaches the technique rather than just dumping strings.
+ * Shows how the answer was actually found: which query variants were searched,
+ * and which chunks each one surfaced before Reciprocal Rank Fusion ranked them.
+ *
+ * Worth keeping visible because the pipeline is adaptive. Decomposition only runs
+ * for a genuinely compound question, so the presence or absence of a sub-query
+ * row is the quickest way to see whether the classifier judged it correctly.
  */
-const VARIANTS = [
-  ["rewritten", "Rewritten", "typos fixed, made explicit and self-contained"],
-  ["stepBack", "Step-back", "a broader question, for background context"],
-  ["hyde", "HyDE", "a hypothetical answer — embedded as if it were a document"],
-];
-
-const SUBQUERY_NOTE = "one focused part of the question";
-
-export default function RetrievalTrace({ queries, sources = [], elapsed }) {
+export default function RetrievalTrace({ queries, chunks }) {
   const [open, setOpen] = useState(false);
-  const panelId = useId();
 
-  const variants = useMemo(() => {
-    if (!queries) return [];
-    const named = VARIANTS.filter(([key]) => queries[key]?.trim()).map(
-      ([key, label, note]) => ({ key, label, note, text: queries[key] })
-    );
-    const subs = (queries.subQueries ?? []).map((text, i) => ({
-      key: `subQuery${i + 1}`,
-      label: `Sub-query ${i + 1}`,
-      note: SUBQUERY_NOTE,
-      text,
-    }));
-    return [...named, ...subs];
-  }, [queries]);
+  const variants = [
+    { label: "rewritten", text: queries.rewritten },
+    { label: "stepBack", text: queries.stepBack },
+    { label: "hyde", text: queries.hyde },
+    ...(queries.subQueries ?? []).map((text, i) => ({ label: `subQuery${i + 1}`, text })),
+  ].filter((v) => v.text);
 
-  const maxRrf = useMemo(
-    () => Math.max(...sources.map((s) => s.rrfScore ?? 0), Number.EPSILON),
-    [sources]
-  );
-
-  if (variants.length === 0 && sources.length === 0) return null;
+  // The top fused score sets the bar width, so bars compare against each other
+  // rather than an absolute scale that would mean nothing to a reader.
+  const topScore = Math.max(...chunks.map((c) => c.rrfScore ?? 0), 0.0001);
 
   return (
     <section className={styles.trace}>
       <button
         type="button"
-        className={styles.summary}
-        onClick={() => setOpen((v) => !v)}
+        className={styles.toggle}
+        onClick={() => setOpen((o) => !o)}
         aria-expanded={open}
-        aria-controls={panelId}
       >
-        <span className={styles.chevron} data-open={open || undefined} aria-hidden="true">
-          <svg viewBox="0 0 12 12">
-            <path
-              d="M4 2l4 4-4 4"
-              fill="none"
-              stroke="currentColor"
-              strokeWidth="1.3"
-              strokeLinecap="round"
-            />
-          </svg>
-        </span>
-        <span className={styles.summaryLabel}>Retrieval trace</span>
-        <span className={styles.summaryStats}>
-          {variants.length > 0 && <b>{variants.length}</b>}
-          {variants.length > 0 && " variants"}
-          {variants.length > 0 && sources.length > 0 && (
-            <span className={styles.sep} aria-hidden="true">
-              ·
-            </span>
-          )}
-          {sources.length > 0 && <b>{sources.length}</b>}
-          {sources.length > 0 && " chunks"}
-          {elapsed && (
-            <>
-              <span className={styles.sep} aria-hidden="true">
-                ·
-              </span>
-              {elapsed}
-            </>
-          )}
+        <svg
+          className={`${styles.chevron} ${open ? styles.chevronOpen : ""}`}
+          viewBox="0 0 16 16"
+          width="10"
+          height="10"
+          aria-hidden="true"
+        >
+          <path
+            d="M6 4l4 4-4 4"
+            stroke="currentColor"
+            strokeWidth="1.8"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+            fill="none"
+          />
+        </svg>
+        Retrieval trace
+        <span className={`${styles.summary} mono`}>
+          {variants.length} {variants.length === 1 ? "variant" : "variants"} · {chunks.length}{" "}
+          chunks{queries.isCompound ? " · decomposed" : ""}
         </span>
       </button>
 
-      <div className={styles.panelWrap} data-open={open || undefined}>
-        <div className={styles.panelInner}>
-          <div id={panelId} className={styles.panel} hidden={!open}>
-            {variants.length > 0 && (
-              <div className={styles.block}>
-                <h3 className={styles.blockTitle}>
-                  Searched with <span>{variants.length}</span> query variants
-                </h3>
-                <ul className={styles.variants}>
-                  {variants.map((variant) => (
-                    <li key={variant.key} className={styles.variant}>
-                      <div className={styles.variantHead}>
-                        <span className={styles.variantLabel}>{variant.label}</span>
-                        <span className={styles.variantNote}>{variant.note}</span>
-                      </div>
-                      <p className={styles.variantText}>{variant.text}</p>
-                    </li>
-                  ))}
-                </ul>
-              </div>
-            )}
-
-            {sources.length > 0 && (
-              <div className={styles.block}>
-                <h3 className={styles.blockTitle}>
-                  Fused to the top <span>{sources.length}</span> chunks
-                </h3>
-                <ol className={styles.chunks}>
-                  {sources.map((source, i) => (
-                    <ChunkRow
-                      key={`${source.source}-${source.chunkIndex}-${i}`}
-                      rank={i + 1}
-                      source={source}
-                      maxRrf={maxRrf}
-                    />
-                  ))}
-                </ol>
-                <p className={styles.footnote}>
-                  Bar length is the fused rank score. A chunk found by several
-                  variants outranks one that topped a single list.
-                </p>
-              </div>
-            )}
-          </div>
-        </div>
-      </div>
-    </section>
-  );
-}
-
-/* ------------------------------------------------------------------ chunk */
-
-function ChunkRow({ rank, source, maxRrf }) {
-  const [expanded, setExpanded] = useState(false);
-  const matched = source.matchedBy ?? [];
-  const width = `${Math.max(4, ((source.rrfScore ?? 0) / maxRrf) * 100)}%`;
-  const long = (source.text?.length ?? 0) > 220;
-
-  return (
-    <li className={styles.chunk}>
-      <span className={styles.rank}>{String(rank).padStart(2, "0")}</span>
-
-      <div className={styles.chunkBody}>
-        <div className={styles.chunkHead}>
-          <span className={styles.chunkSource} title={source.source ?? ""}>
-            {source.source ?? "unknown"}
-            {Number.isInteger(source.chunkIndex) && (
-              <span className={styles.chunkIndex}>#{source.chunkIndex}</span>
-            )}
-          </span>
-          <span className={styles.scores}>
-            {typeof source.rrfScore === "number" && (
-              <span title="Reciprocal Rank Fusion score — this decided the order">
-                rrf {source.rrfScore.toFixed(4)}
-              </span>
-            )}
-            {typeof source.score === "number" && (
-              <span title="Best raw cosine similarity across the variants">
-                cos {source.score.toFixed(3)}
-              </span>
-            )}
-          </span>
-        </div>
-
-        <span className={styles.track} aria-hidden="true">
-          <span className={styles.bar} style={{ width }} />
-        </span>
-
-        {matched.length > 0 && (
-          <ul className={styles.matched} aria-label="Found by these query variants">
-            {matched.map((label) => (
-              <li key={label}>{label}</li>
+      {open ? (
+        <div className={styles.body}>
+          <h4 className={styles.sectionHead}>Searched with</h4>
+          <ul className={styles.variants}>
+            {variants.map((variant) => (
+              <li key={variant.label} className={styles.variant}>
+                <span className={`${styles.variantLabel} mono`}>{variantLabel(variant.label)}</span>
+                <p className={styles.variantText}>{truncate(variant.text, 260)}</p>
+              </li>
             ))}
           </ul>
-        )}
 
-        <p className={styles.excerpt}>
-          {expanded ? source.text : truncate(source.text, 220)}
-        </p>
+          {!queries.isCompound ? (
+            <p className={styles.note}>
+              Single-intent question, so decomposition was skipped — an extra sub-query would only
+              add a near-duplicate ranking to the fusion.
+            </p>
+          ) : null}
 
-        {long && (
-          <button
-            type="button"
-            className={styles.more}
-            onClick={() => setExpanded((v) => !v)}
-          >
-            {expanded ? "Show less" : "Show full chunk"}
-          </button>
-        )}
-      </div>
-    </li>
+          <h4 className={styles.sectionHead}>Fused ranking</h4>
+          <ul className={styles.chunks}>
+            {chunks.map((chunk) => (
+              <li key={`${chunk.lessonId}-${chunk.n}`} className={styles.chunk}>
+                <span className={`${styles.chunkIndex} mono`}>{chunk.n}</span>
+
+                <span className={styles.chunkWhere}>
+                  <span className={styles.chunkLesson}>{chunk.lessonTitle}</span>
+                  <span className={`${styles.chunkTime} mono`}>
+                    {formatTimecode(chunk.startMs)}–{formatTimecode(chunk.endMs)}
+                  </span>
+                </span>
+
+                <span className={styles.matched}>
+                  {(chunk.matchedBy ?? []).map((label) => (
+                    <span key={label} className={styles.matchTag}>
+                      {variantLabel(label)}
+                    </span>
+                  ))}
+                </span>
+
+                <span className={styles.score}>
+                  <span
+                    className={styles.scoreBar}
+                    style={{ width: `${Math.round(((chunk.rrfScore ?? 0) / topScore) * 100)}%` }}
+                  />
+                  <span className={`${styles.scoreValue} mono`}>
+                    {(chunk.rrfScore ?? 0).toFixed(4)}
+                  </span>
+                </span>
+              </li>
+            ))}
+          </ul>
+        </div>
+      ) : null}
+    </section>
   );
 }

@@ -1,170 +1,176 @@
-import { useEffect, useLayoutEffect, useRef } from "react";
+import { useEffect, useRef } from "react";
 import Markdown from "react-markdown";
+import CitationChip from "./CitationChip";
 import RetrievalTrace from "./RetrievalTrace";
 import { formatDuration } from "../lib/format";
 import styles from "./Conversation.module.css";
 
 const EXAMPLES = [
-  "Summarise the key points of this document.",
-  "What does it say about limits or thresholds?",
-  "What steps does it recommend, and in what order?",
+  "Dynamic routes kaise banate hain?",
+  "Expo secure store vs async storage — kab kya use karein?",
+  "Which module covers navigation?",
+  "How do I set up an EAS development build?",
 ];
 
-export default function Conversation({ turns, hasSources, loadingSources, onAskExample }) {
-  const scrollRef = useRef(null);
+/**
+ * The middle pane. Renders whichever shape the backend routed each turn to:
+ * a grounded content answer with timestamped citations, a syllabus answer with
+ * lesson links, or a refusal.
+ */
+export default function Conversation({ turns, onJump, onAskExample, indexedLessons, totalLessons }) {
   const endRef = useRef(null);
-  // Only follow the conversation if the reader is already at the bottom —
-  // yanking them down mid-sentence while they scroll back is hostile.
-  const pinned = useRef(true);
+  // Also re-run when the last turn changes phase, so the view follows an answer
+  // as it lands, not just when a new question is added.
+  const lastPhase = turns.at(-1)?.phase;
 
   useEffect(() => {
-    const el = scrollRef.current;
-    if (!el) return undefined;
-
-    const onScroll = () => {
-      const distance = el.scrollHeight - el.scrollTop - el.clientHeight;
-      pinned.current = distance < 120;
-    };
-    el.addEventListener("scroll", onScroll, { passive: true });
-    return () => el.removeEventListener("scroll", onScroll);
-  }, []);
-
-  useLayoutEffect(() => {
-    if (pinned.current) {
-      endRef.current?.scrollIntoView({ behavior: "smooth", block: "end" });
-    }
-  }, [turns]);
+    endRef.current?.scrollIntoView({ behavior: "smooth", block: "end" });
+  }, [turns.length, lastPhase]);
 
   if (turns.length === 0) {
     return (
-      <div className={styles.scroll} ref={scrollRef}>
-        <div className={styles.column}>
-          <Welcome
-            hasSources={hasSources}
-            loading={loadingSources}
-            onAskExample={onAskExample}
-          />
-        </div>
-      </div>
+      <Empty onAsk={onAskExample} indexedLessons={indexedLessons} totalLessons={totalLessons} />
     );
   }
 
   return (
-    <div className={styles.scroll} ref={scrollRef}>
-      <div className={styles.column}>
-        <ol className={styles.turns}>
-          {turns.map((turn) => (
-            <Turn key={turn.id} turn={turn} />
-          ))}
-        </ol>
-        <div ref={endRef} aria-hidden="true" />
+    <div className={styles.scroller}>
+      <div className={styles.thread}>
+        {turns.map((turn) => (
+          <Turn key={turn.id} turn={turn} onJump={onJump} />
+        ))}
+        <div ref={endRef} />
       </div>
     </div>
   );
 }
 
-/* --------------------------------------------------------------- welcome */
+function Turn({ turn, onJump }) {
+  const { phase, kind } = turn;
 
-function Welcome({ hasSources, loading, onAskExample }) {
   return (
-    <div className={styles.welcome}>
-      <p className={styles.welcomeEyebrow}>No conversation yet</p>
-      <h2 className={styles.welcomeTitle}>
-        Ask anything of your <em>own</em> documents.
-      </h2>
-      <p className={styles.welcomeBody}>
-        Each question is rewritten, stepped back from, and turned into a hypothetical
-        answer — six searches in all. The results are fused by rank, and every answer
-        keeps the trace that produced it.
-      </p>
+    <article className={styles.turn}>
+      <div className={styles.question}>
+        <span className={styles.qMark} aria-hidden="true">
+          ?
+        </span>
+        <p>{turn.question}</p>
+      </div>
 
-      {loading ? null : hasSources ? (
-        <div className={styles.examples}>
-          <span className={styles.examplesLabel}>Try</span>
-          <ul>
-            {EXAMPLES.map((example, i) => (
-              <li key={example} style={{ animationDelay: `${240 + i * 80}ms` }}>
-                <button type="button" onClick={() => onAskExample(example)}>
+      {turn.masked ? (
+        <p className={styles.masked}>
+          <strong>{turn.masked.count}</strong>{" "}
+          {turn.masked.count === 1 ? "secret" : "secrets"} masked before sending
+          {turn.masked.summary ? ` (${turn.masked.summary})` : ""}.
+        </p>
+      ) : null}
+
+      {phase === "queued" || phase === "thinking" ? (
+        <Thinking phase={phase} />
+      ) : phase === "error" ? (
+        <p className={styles.error} role="alert">
+          {turn.error}
+        </p>
+      ) : kind === "blocked" ? (
+        <div className={styles.blocked}>
+          <span className={styles.blockedBadge}>Out of scope</span>
+          <p>{turn.answer}</p>
+        </div>
+      ) : (
+        <Answer turn={turn} onJump={onJump} />
+      )}
+    </article>
+  );
+}
+
+function Answer({ turn, onJump }) {
+  const { kind, answer, citations, covered, chunks, queries, elapsedMs, courseTitle } = turn;
+  const isCatalog = kind === "metadata";
+
+  return (
+    <div className={styles.answer}>
+      <header className={styles.answerHead}>
+        <span
+          className={`${styles.badge} ${isCatalog ? styles.badgeCatalog : styles.badgeContent}`}
+        >
+          {isCatalog ? "Catalog" : "Transcript"}
+        </span>
+        {courseTitle ? <span className={styles.course}>{courseTitle}</span> : null}
+        {!covered ? <span className={styles.notCovered}>not covered</span> : null}
+        {elapsedMs ? (
+          <span className={`${styles.elapsed} mono`}>{formatDuration(elapsedMs)}</span>
+        ) : null}
+      </header>
+
+      <div className={styles.prose}>
+        <Markdown>{answer}</Markdown>
+      </div>
+
+      {citations.length > 0 ? (
+        <section className={styles.sources}>
+          <h3 className={styles.sourcesHead}>{isCatalog ? "Lessons" : "Where this comes from"}</h3>
+          <ul className={styles.sourceList}>
+            {citations.map((citation) => (
+              <li key={`${citation.lessonId}-${citation.n}`}>
+                <CitationChip citation={citation} onJump={onJump} timeless={isCatalog} />
+              </li>
+            ))}
+          </ul>
+        </section>
+      ) : null}
+
+      {!isCatalog && queries ? <RetrievalTrace queries={queries} chunks={chunks} /> : null}
+    </div>
+  );
+}
+
+function Thinking({ phase }) {
+  return (
+    <p className={styles.thinking} role="status">
+      <span className={styles.bar} aria-hidden="true">
+        <span className={styles.barFill} />
+      </span>
+      {phase === "queued" ? "Queued…" : "Searching the transcripts…"}
+    </p>
+  );
+}
+
+function Empty({ onAsk, indexedLessons, totalLessons }) {
+  const nothingIndexed = indexedLessons === 0 && totalLessons > 0;
+
+  return (
+    <div className={styles.empty}>
+      <div className={styles.emptyInner}>
+        <p className={styles.emptyEyebrow}>Ask your course</p>
+        <h1 className={styles.emptyTitle}>
+          Every answer carries a <span className={styles.emphasis}>timestamp</span>
+        </h1>
+        <p className={styles.emptyBody}>
+          Ask a doubt in English or Hinglish. The answer names the module and chapter it came from
+          and the exact second — click it and the transcript opens on that line.
+        </p>
+
+        {nothingIndexed ? (
+          <div className={styles.emptyWarn}>
+            <strong>Nothing is indexed yet.</strong> You can still read any transcript from the rail,
+            but answering needs embeddings first:
+            <code>npm run ingest</code>
+          </div>
+        ) : (
+          <ul className={styles.examples}>
+            {EXAMPLES.map((example) => (
+              <li key={example}>
+                <button type="button" className={styles.example} onClick={() => onAsk(example)}>
+                  <span className={styles.exampleArrow} aria-hidden="true">
+                    →
+                  </span>
                   {example}
                 </button>
               </li>
             ))}
           </ul>
-        </div>
-      ) : (
-        <p className={styles.welcomeCta}>
-          <span aria-hidden="true">←</span> Add a PDF or Markdown file to the archive to
-          get started.
-        </p>
-      )}
-    </div>
-  );
-}
-
-/* ------------------------------------------------------------------ turn */
-
-const THINKING_STEPS = [
-  "Rewriting the question",
-  "Writing a hypothetical answer",
-  "Searching with six variants",
-  "Fusing results by rank",
-  "Reading the top chunks",
-];
-
-function Turn({ turn }) {
-  const pendingTurn = turn.phase === "queued" || turn.phase === "thinking";
-
-  return (
-    <li className={styles.turn}>
-      <div className={styles.question}>
-        <span className={styles.questionMark} aria-hidden="true" />
-        <p>{turn.question}</p>
-      </div>
-
-      <div className={styles.answerSlot}>
-        {pendingTurn && <Thinking />}
-
-        {turn.phase === "error" && (
-          <p className={styles.failure} role="alert">
-            <strong>Couldn&rsquo;t answer that.</strong> {turn.error}
-          </p>
-        )}
-
-        {turn.phase === "done" && (
-          <>
-            <div className={styles.answer} aria-live="polite">
-              <Markdown
-                components={{
-                  a: (props) => <a {...props} target="_blank" rel="noreferrer noopener" />,
-                }}
-              >
-                {turn.answer}
-              </Markdown>
-            </div>
-
-            <RetrievalTrace
-              queries={turn.queries}
-              sources={turn.sources}
-              elapsed={formatDuration(turn.elapsedMs)}
-            />
-          </>
         )}
       </div>
-    </li>
-  );
-}
-
-function Thinking() {
-  return (
-    <div className={styles.thinking} aria-live="polite" aria-busy="true">
-      <span className="visually-hidden">Working on your answer</span>
-      <ul aria-hidden="true">
-        {THINKING_STEPS.map((step, i) => (
-          <li key={step} style={{ animationDelay: `${i * 900}ms` }}>
-            {step}
-          </li>
-        ))}
-      </ul>
     </div>
   );
 }

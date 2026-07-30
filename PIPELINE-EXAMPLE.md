@@ -1,5 +1,25 @@
 
 
+> ## ⚠️ Out of date — describes the previous PDF pipeline
+>
+> This walkthrough was captured from the **document/PDF** version of this project, before it
+> became a course-transcript Q&A app. It is kept because the RRF arithmetic and the general
+> shape of the trace are still instructive, but these specifics no longer match the code:
+>
+> | In this document | In the current code |
+> |---|---|
+> | 6 query variants, always | 3–4, decomposition only when the question is compound |
+> | HyDE asks for an encyclopedic reference passage | HyDE imitates spoken tutorial transcript |
+> | Qdrant collection `documents`, payload `source` / `chunkIndex` | `course_transcripts`, payload carries `courseId`, `lessonId`, `moduleTitle`, `startMs`, `endMs`, `cueStart`, `cueEnd` |
+> | Character-window chunking of a PDF | three-stage sentence- and pause-aware chunking of subtitle cues |
+> | Upload a file at `POST /api/index` | `npm run ingest` over subtitle folders |
+> | Answer cites a chunk index | answer cites module, chapter and an exact timestamp |
+>
+> A fresh walkthrough would need a live run against a real key and a running Qdrant.
+> See [README.md](README.md) for how the pipeline works today.
+
+---
+
 # Qdrant UI--- to show vectore database tables -- chunks
 
 1. Dashboard (GUI)

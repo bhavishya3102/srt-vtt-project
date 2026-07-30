@@ -1,315 +1,407 @@
-.scroll {
-  overflow-y: auto;
+.scroller {
+  flex: 1;
   min-height: 0;
-  scroll-behavior: smooth;
+  overflow-y: auto;
+  overscroll-behavior: contain;
 }
 
-.column {
-  max-width: calc(var(--reading-width) + var(--sp-7) * 2);
-  margin: 0 auto;
-  padding: var(--sp-6) var(--sp-7) var(--sp-6);
-}
-
-/* --------------------------------------------------------------- welcome */
-
-.welcome {
-  padding: clamp(var(--sp-5), 8vh, var(--sp-7)) 0 var(--sp-6);
-}
-
-.welcomeEyebrow {
-  font-family: var(--font-mono);
-  font-size: var(--step--2);
-  letter-spacing: 0.22em;
-  text-transform: uppercase;
-  color: var(--ink-faint);
-  animation: rise var(--slow) var(--ease-out) 120ms both;
-}
-
-.welcomeTitle {
-  margin-top: var(--sp-3);
-  font-family: var(--font-display);
-  font-size: clamp(2rem, 5vw, 3.25rem);
-  line-height: 1.04;
-  letter-spacing: -0.02em;
-  animation: rise var(--slow) var(--ease-out) 180ms both;
-}
-
-.welcomeTitle em {
-  font-style: italic;
-  color: var(--amber-bright);
-}
-
-.welcomeBody {
-  max-width: 34rem;
-  margin-top: var(--sp-4);
-  font-size: var(--step-1);
-  line-height: 1.7;
-  color: var(--ink-soft);
-  text-wrap: pretty;
-  animation: rise var(--slow) var(--ease-out) 260ms both;
-}
-
-.welcomeCta {
-  margin-top: var(--sp-5);
-  padding-left: var(--sp-3);
-  border-left: 2px solid var(--amber);
-  font-family: var(--font-mono);
-  font-size: var(--step--1);
-  color: var(--amber);
-  animation: rise var(--slow) var(--ease-out) 340ms both;
-}
-
-.examples {
-  margin-top: var(--sp-6);
-}
-
-.examplesLabel {
-  font-family: var(--font-mono);
-  font-size: var(--step--2);
-  letter-spacing: 0.22em;
-  text-transform: uppercase;
-  color: var(--ink-faint);
-}
-
-.examples ul {
-  display: grid;
-  gap: 1px;
-  margin-top: var(--sp-3);
-  border-top: 1px solid var(--rule);
-}
-
-.examples li {
-  border-bottom: 1px solid var(--rule);
-  animation: rise var(--mid) var(--ease-out) both;
-}
-
-.examples button {
-  display: block;
+.thread {
   width: 100%;
-  padding: var(--sp-3) 0;
-  text-align: left;
-  font-size: var(--step-1);
-  color: var(--ink-soft);
-  transition:
-    color var(--fast) var(--ease),
-    padding-left var(--mid) var(--ease-out);
-}
-
-.examples button:hover {
-  color: var(--amber-bright);
-  padding-left: var(--sp-3);
-}
-
-/* ------------------------------------------------------------------ turn */
-
-.turns {
-  display: grid;
-  gap: var(--sp-7);
+  max-width: var(--reading-width);
+  margin: 0 auto;
+  padding: var(--sp-5) var(--sp-5) var(--sp-6);
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-6);
 }
 
 .turn {
-  animation: rise var(--mid) var(--ease-out) both;
+  animation: riseIn var(--mid) var(--ease-out) both;
 }
+
+/* -------------------------------------------------------------- question */
 
 .question {
   display: flex;
+  align-items: baseline;
   gap: var(--sp-3);
-  align-items: flex-start;
+  padding-bottom: var(--sp-3);
+  border-bottom: 1px solid var(--rule);
 }
 
-.questionMark {
-  flex: none;
-  width: 1.5rem;
-  height: 1px;
-  margin-top: 0.85rem;
-  background: var(--amber);
-  transform-origin: left;
-  animation: draw var(--mid) var(--ease-out) both;
+.qMark {
+  flex-shrink: 0;
+  font-family: var(--font-mono);
+  font-size: var(--step-2);
+  font-weight: 700;
+  line-height: 1;
+  color: var(--cue);
 }
 
 .question p {
-  font-family: var(--font-display);
-  font-size: var(--step-3);
-  line-height: 1.22;
-  letter-spacing: -0.01em;
-  color: var(--ink);
-  text-wrap: pretty;
+  font-size: var(--step-2);
+  font-weight: 600;
+  font-variation-settings: "wdth" 104;
+  line-height: 1.35;
+  letter-spacing: -0.015em;
 }
 
-.answerSlot {
+.masked {
+  margin-top: var(--sp-3);
+  padding: var(--sp-2) var(--sp-3);
+  font-size: var(--step--1);
+  color: var(--amber);
+  background: var(--amber-wash);
+  border-left: 2px solid var(--amber);
+  border-radius: 0 var(--radius-sm) var(--radius-sm) 0;
+}
+
+/* --------------------------------------------------------------- pending */
+
+.thinking {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-3);
   margin-top: var(--sp-4);
-  padding-left: calc(1.5rem + var(--sp-3));
+  font-size: var(--step--1);
+  color: var(--ink-muted);
+}
+
+/* An indeterminate scrubber sweeping its track, so even the loading state stays
+   in the same visual language as the citations. */
+.bar {
+  position: relative;
+  width: 54px;
+  height: 2px;
+  overflow: hidden;
+  background: var(--rule-strong);
+  border-radius: 2px;
+}
+
+.barFill {
+  position: absolute;
+  inset: 0;
+  width: 30%;
+  background: var(--cue);
+  border-radius: 2px;
+  animation: sweep 1.1s var(--ease) infinite;
+}
+
+.error {
+  margin-top: var(--sp-4);
+  padding: var(--sp-3);
+  font-size: var(--step--1);
+  color: var(--danger);
+  background: var(--danger-wash);
+  border-left: 2px solid var(--danger);
+  border-radius: 0 var(--radius-sm) var(--radius-sm) 0;
+}
+
+/* --------------------------------------------------------------- blocked */
+
+.blocked {
+  display: flex;
+  align-items: baseline;
+  gap: var(--sp-3);
+  margin-top: var(--sp-4);
+  padding: var(--sp-3) var(--sp-4);
+  font-size: var(--step-0);
+  color: var(--ink-soft);
+  background: var(--surface);
+  border: 1px solid var(--rule);
+  border-radius: var(--radius);
+}
+
+.blockedBadge {
+  flex-shrink: 0;
+  font-family: var(--font-mono);
+  font-size: var(--step--2);
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--ink-muted);
 }
 
 /* ---------------------------------------------------------------- answer */
 
 .answer {
-  font-size: var(--step-1);
-  line-height: 1.78;
-  color: var(--ink-soft);
-  animation: rise var(--mid) var(--ease-out) both;
-}
-
-.answer > * + * {
   margin-top: var(--sp-4);
 }
 
-.answer :is(h1, h2, h3) {
-  font-family: var(--font-display);
-  font-size: var(--step-2);
-  color: var(--ink);
+.answerHead {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-3);
+  margin-bottom: var(--sp-3);
 }
 
-.answer strong {
-  font-weight: 600;
-  color: var(--ink);
-}
-
-.answer code {
+.badge {
   font-family: var(--font-mono);
-  font-size: 0.86em;
-  padding: 0.12em 0.4em;
+  font-size: var(--step--2);
+  font-weight: 500;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  padding: 2px 6px;
+  border-radius: 2px;
+}
+
+.badgeContent {
+  color: var(--cue);
+  background: var(--cue-wash);
+  border: 1px solid var(--cue-edge);
+}
+
+.badgeCatalog {
+  color: var(--cyan);
+  background: rgba(86, 212, 221, 0.09);
+  border: 1px solid rgba(86, 212, 221, 0.28);
+}
+
+.course {
+  font-size: var(--step--2);
+  color: var(--ink-muted);
+}
+
+.notCovered {
+  font-size: var(--step--2);
+  color: var(--amber);
+}
+
+.elapsed {
+  margin-left: auto;
+  font-size: var(--step--2);
+  color: var(--ink-faint);
+}
+
+/* ----------------------------------------------------------------- prose */
+
+.prose {
+  font-size: var(--step-1);
+  line-height: 1.7;
+  color: var(--ink-soft);
+}
+
+.prose > * + * {
+  margin-top: var(--sp-3);
+}
+
+.prose strong {
+  color: var(--ink);
+  font-weight: 600;
+}
+
+.prose code {
+  font-family: var(--font-mono);
+  font-size: 0.875em;
+  padding: 1px 5px;
+  color: var(--cue-bright);
+  background: rgba(195, 245, 60, 0.07);
   border-radius: 3px;
-  background: var(--surface-raised);
-  border: 1px solid var(--rule);
-  color: var(--amber-bright);
-  word-break: break-word;
 }
 
-.answer pre {
-  padding: var(--sp-3) var(--sp-4);
-  border-radius: 4px;
-  background: var(--surface-sunken);
-  border: 1px solid var(--rule);
+.prose pre {
+  padding: var(--sp-3);
   overflow-x: auto;
+  background: var(--ground-deep);
+  border: 1px solid var(--rule);
+  border-radius: var(--radius);
 }
 
-.answer pre code {
+.prose pre code {
   padding: 0;
-  border: 0;
   background: none;
   color: var(--ink-soft);
 }
 
-.answer :is(ul, ol) {
+.prose ul,
+.prose ol {
   padding-left: var(--sp-5);
 }
 
-.answer ul {
+.prose li {
   list-style: none;
+  position: relative;
 }
 
-.answer ul li::before {
-  content: "—";
-  position: absolute;
-  margin-left: -1.4em;
-  color: var(--amber-dim);
-}
-
-.answer ol {
-  list-style: decimal;
-}
-
-.answer li + li {
+.prose li + li {
   margin-top: var(--sp-2);
 }
 
-.answer blockquote {
-  padding-left: var(--sp-4);
-  border-left: 2px solid var(--amber-dim);
-  font-style: italic;
-  color: var(--ink-muted);
-}
-
-/* -------------------------------------------------------------- thinking */
-
-.thinking ul {
-  display: grid;
-  gap: var(--sp-2);
-  font-family: var(--font-mono);
-  font-size: var(--step--1);
-  color: var(--ink-faint);
-}
-
-/* The step text is opaque by default and only *transformed* on entry — never
-   animate its opacity from 0, or the text disappears entirely if the animation
-   fails to run. The pulse lives on the dot, which is decoration. */
-.thinking li {
-  position: relative;
-  padding-left: var(--sp-4);
-  animation: rise var(--mid) var(--ease-out) backwards;
-}
-
-.thinking li::before {
+.prose ul > li::before {
   content: "";
   position: absolute;
-  left: 0;
+  left: calc(-1 * var(--sp-4));
   top: 0.62em;
   width: 5px;
-  height: 5px;
-  border-radius: 99px;
-  background: var(--amber);
-  animation: breathe 2.4s var(--ease) infinite;
+  height: 2px;
+  background: var(--cue-dim);
 }
 
-/* --------------------------------------------------------------- failure */
-
-.failure {
-  padding: var(--sp-3) var(--sp-4);
-  border-left: 2px solid var(--oxblood);
-  background: rgba(179, 84, 63, 0.09);
-  font-size: var(--step-0);
-  line-height: 1.6;
-  color: var(--ink-soft);
-  text-wrap: pretty;
+.prose ol {
+  counter-reset: step;
 }
 
-.failure strong {
-  display: block;
+.prose ol > li {
+  counter-increment: step;
+}
+
+.prose ol > li::before {
+  content: counter(step);
+  position: absolute;
+  left: calc(-1 * var(--sp-5));
+  font-family: var(--font-mono);
+  font-size: var(--step--1);
+  color: var(--cue-dim);
+}
+
+.prose h1,
+.prose h2,
+.prose h3 {
+  font-size: var(--step-1);
+  font-weight: 600;
   color: var(--ink);
 }
 
-@media (max-width: 60rem) {
-  .column {
-    padding: var(--sp-5) var(--sp-4) var(--sp-5);
-  }
-
-  .answerSlot {
-    padding-left: 0;
-  }
-
-  .question p {
-    font-size: var(--step-2);
-  }
+.prose blockquote {
+  padding-left: var(--sp-3);
+  border-left: 2px solid var(--rule-strong);
+  color: var(--ink-muted);
 }
 
-/* Keyframes must live in this module — see the note in styles/tokens.css. */
-@keyframes rise {
-  from {
-    opacity: 0;
-    transform: translateY(12px);
-  }
-  to {
-    opacity: 1;
-    transform: none;
-  }
+/* --------------------------------------------------------------- sources */
+
+.sources {
+  margin-top: var(--sp-5);
 }
 
-@keyframes draw {
-  from {
-    transform: scaleX(0);
-  }
-  to {
-    transform: scaleX(1);
-  }
+.sourcesHead {
+  font-family: var(--font-mono);
+  font-size: var(--step--2);
+  font-weight: 500;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--ink-faint);
 }
 
-@keyframes breathe {
-  0%,
-  100% {
-    opacity: 0.3;
-  }
-  50% {
-    opacity: 1;
-  }
+.sourceList {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-2);
+  margin-top: var(--sp-3);
+}
+
+/* ----------------------------------------------------------------- empty */
+
+.empty {
+  flex: 1;
+  display: grid;
+  place-items: center;
+  min-height: 0;
+  overflow-y: auto;
+  padding: var(--sp-6) var(--sp-5);
+}
+
+.emptyInner {
+  width: 100%;
+  max-width: 34rem;
+  animation: riseIn var(--slow) var(--ease-out) both;
+}
+
+.emptyEyebrow {
+  font-family: var(--font-mono);
+  font-size: var(--step--2);
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  color: var(--cue-dim);
+}
+
+.emptyTitle {
+  margin-top: var(--sp-3);
+  font-size: var(--step-4);
+  font-weight: 700;
+  font-variation-settings: "wdth" 112;
+  line-height: 1.05;
+  letter-spacing: -0.03em;
+  color: var(--ink);
+}
+
+/* The one word the whole app is about, marked like a selected clip. */
+.emphasis {
+  color: var(--cue);
+  box-shadow: inset 0 -0.32em 0 var(--cue-wash-strong);
+}
+
+.emptyBody {
+  margin-top: var(--sp-4);
+  font-size: var(--step-1);
+  line-height: 1.65;
+  color: var(--ink-muted);
+}
+
+.emptyWarn {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--sp-2);
+  margin-top: var(--sp-5);
+  padding: var(--sp-3) var(--sp-4);
+  font-size: var(--step--1);
+  line-height: 1.6;
+  color: var(--ink-soft);
+  background: var(--amber-wash);
+  border-left: 2px solid var(--amber);
+  border-radius: 0 var(--radius) var(--radius) 0;
+}
+
+.emptyWarn strong {
+  color: var(--amber);
+}
+
+.emptyWarn code {
+  font-family: var(--font-mono);
+  font-size: 0.8125rem;
+  padding: 2px 6px;
+  color: var(--cue-bright);
+  background: var(--ground-deep);
+  border-radius: 3px;
+}
+
+.examples {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-1);
+  margin-top: var(--sp-5);
+}
+
+.example {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-3);
+  width: 100%;
+  padding: var(--sp-3);
+  text-align: left;
+  font-size: var(--step-0);
+  color: var(--ink-soft);
+  border: 1px solid transparent;
+  border-radius: var(--radius);
+  transition:
+    color var(--fast) var(--ease),
+    background-color var(--fast) var(--ease),
+    border-color var(--fast) var(--ease);
+}
+
+.example:hover {
+  color: var(--ink);
+  background: var(--surface);
+  border-color: var(--rule);
+}
+
+.exampleArrow {
+  font-family: var(--font-mono);
+  color: var(--cue-dim);
+  transition: transform var(--fast) var(--ease);
+}
+
+.example:hover .exampleArrow {
+  transform: translateX(3px);
+  color: var(--cue);
 }

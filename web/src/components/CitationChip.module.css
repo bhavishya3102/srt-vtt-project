@@ -1,0 +1,152 @@
+.chip {
+  display: grid;
+  grid-template-columns: auto 1fr auto;
+  align-items: center;
+  gap: var(--sp-3);
+  width: 100%;
+  padding: var(--sp-2) var(--sp-3);
+  text-align: left;
+  background: var(--surface);
+  border: 1px solid var(--rule);
+  border-radius: var(--radius);
+  transition:
+    border-color var(--fast) var(--ease),
+    background-color var(--fast) var(--ease),
+    transform var(--fast) var(--ease);
+}
+
+.chip:hover {
+  background: var(--surface-raised);
+  border-color: var(--cue-edge);
+  transform: translateX(2px);
+}
+
+.chip:active {
+  transform: translateX(1px);
+}
+
+/* --- the [n] marker, matching the numbers in the answer --- */
+
+.index {
+  display: grid;
+  place-items: center;
+  width: 18px;
+  height: 18px;
+  font-family: var(--font-mono);
+  font-size: var(--step--2);
+  font-weight: 700;
+  color: var(--cue);
+  background: var(--cue-wash);
+  border: 1px solid var(--cue-edge);
+  border-radius: var(--radius-sm);
+}
+
+/* --- where it came from --- */
+
+.where {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+
+.module {
+  font-family: var(--font-mono);
+  font-size: var(--step--2);
+  letter-spacing: 0.04em;
+  color: var(--ink-muted);
+  text-transform: uppercase;
+}
+
+.lesson {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  font-size: var(--step--1);
+  font-weight: 500;
+  color: var(--ink);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.mp {
+  flex-shrink: 0;
+  padding: 0 4px;
+  font-family: var(--font-mono);
+  font-size: 0.625rem;
+  font-weight: 700;
+  color: var(--amber);
+  background: var(--amber-wash);
+  border: 1px solid var(--amber-edge);
+  border-radius: 2px;
+}
+
+/* --- the scrubber: what makes a citation read as a moment in time --- */
+
+.scrubber {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  flex-shrink: 0;
+}
+
+.track {
+  position: relative;
+  width: 34px;
+  height: 2px;
+  background: var(--rule-strong);
+  border-radius: 2px;
+}
+
+/*
+ * The playhead tick sits at ~62% of the track. It is decorative: the real
+ * position within the lesson isn't meaningful at this size, and animating it to
+ * a computed offset would imply a precision the chip doesn't have.
+ */
+.tick {
+  position: absolute;
+  left: 62%;
+  top: -3px;
+  width: 2px;
+  height: 8px;
+  background: var(--cue);
+  border-radius: 1px;
+  box-shadow: 0 0 6px var(--cue-glow);
+  transition: left var(--mid) var(--ease-out);
+}
+
+.chip:hover .tick {
+  left: 78%;
+}
+
+.time {
+  font-size: var(--step--1);
+  font-weight: 700;
+  color: var(--cue);
+}
+
+/* --- catalog citations have no timecode --- */
+
+.timeless .index {
+  color: var(--ink-soft);
+  background: rgba(233, 236, 241, 0.05);
+  border-color: var(--rule-strong);
+}
+
+.timeless:hover {
+  border-color: var(--rule-bright);
+}
+
+.arrow {
+  flex-shrink: 0;
+  color: var(--ink-muted);
+  transition:
+    color var(--fast) var(--ease),
+    transform var(--fast) var(--ease);
+}
+
+.timeless:hover .arrow {
+  color: var(--ink);
+  transform: translateX(2px);
+}

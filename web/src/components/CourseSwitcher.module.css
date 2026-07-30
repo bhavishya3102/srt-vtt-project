@@ -1,0 +1,131 @@
+.wrap {
+  position: relative;
+  padding: var(--sp-3) var(--sp-3) var(--sp-3);
+  border-bottom: 1px solid var(--rule);
+}
+
+.eyebrow {
+  display: block;
+  font-family: var(--font-mono);
+  font-size: var(--step--2);
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--ink-faint);
+}
+
+/* --------------------------------------------------------------- trigger */
+
+.trigger {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--sp-2);
+  width: 100%;
+  margin-top: var(--sp-1);
+  padding: var(--sp-2) var(--sp-2) var(--sp-2) var(--sp-1);
+  border: 1px solid transparent;
+  border-radius: var(--radius-sm);
+  transition:
+    background-color var(--fast) var(--ease),
+    border-color var(--fast) var(--ease);
+}
+
+.trigger:hover {
+  background: var(--surface-raised);
+  border-color: var(--rule);
+}
+
+.triggerTitle {
+  font-size: var(--step-1);
+  font-weight: 600;
+  font-variation-settings: "wdth" 106;
+  letter-spacing: -0.01em;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.caret {
+  flex-shrink: 0;
+  color: var(--ink-muted);
+  transition: transform var(--fast) var(--ease);
+}
+
+.caretOpen {
+  transform: rotate(180deg);
+  color: var(--cue);
+}
+
+/* ------------------------------------------------- single-course fallback */
+
+.single {
+  padding: var(--sp-3);
+  border-bottom: 1px solid var(--rule);
+}
+
+.singleTitle {
+  display: block;
+  margin-top: var(--sp-1);
+  font-size: var(--step-1);
+  font-weight: 600;
+  font-variation-settings: "wdth" 106;
+  letter-spacing: -0.01em;
+}
+
+/* ------------------------------------------------------------- listbox */
+
+.list {
+  position: absolute;
+  z-index: 20;
+  left: var(--sp-2);
+  right: var(--sp-2);
+  top: calc(100% - var(--sp-1));
+  padding: var(--sp-1);
+  background: var(--surface-high);
+  border: 1px solid var(--rule-strong);
+  border-radius: var(--radius);
+  box-shadow: 0 18px 40px -12px rgba(0, 0, 0, 0.7);
+  animation: riseIn var(--fast) var(--ease-out) both;
+}
+
+.option {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  grid-template-areas:
+    "title check"
+    "meta  check";
+  align-items: center;
+  gap: 0 var(--sp-2);
+  width: 100%;
+  padding: var(--sp-2);
+  text-align: left;
+  border-radius: var(--radius-sm);
+  transition: background-color var(--fast) var(--ease);
+}
+
+/* Hover and keyboard-active share one visual state, so the two navigation
+   modes never disagree about what is about to be chosen. */
+.option[data-active="true"] {
+  background: var(--surface-raised);
+}
+
+.optionTitle {
+  grid-area: title;
+  font-size: var(--step-0);
+  font-weight: 500;
+}
+
+.optionMeta {
+  grid-area: meta;
+  font-size: var(--step--2);
+  color: var(--ink-muted);
+}
+
+.optionSelected .optionTitle {
+  color: var(--cue);
+}
+
+.checked {
+  grid-area: check;
+  color: var(--cue);
+}

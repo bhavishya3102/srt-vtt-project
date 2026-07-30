@@ -9,3 +9,9 @@ uploads/
 .DS_Store
 /.env
 /class_subtitle_lyst1784566935215
+# playwright-mcp scratch output
+.playwright-mcp/
+*.png
+
+# frontend build output
+web/dist/

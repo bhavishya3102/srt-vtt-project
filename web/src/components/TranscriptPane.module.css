@@ -1,0 +1,235 @@
+.pane {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  background: var(--surface);
+  border-left: 1px solid var(--rule);
+  animation: riseIn var(--mid) var(--ease-out) both;
+}
+
+/* ------------------------------------------------------------------ head */
+
+.head {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--sp-3);
+  padding: var(--sp-4) var(--sp-4) var(--sp-3);
+  border-bottom: 1px solid var(--rule);
+  background: linear-gradient(var(--surface-raised), var(--surface));
+}
+
+.headText {
+  min-width: 0;
+  flex: 1;
+}
+
+.module {
+  font-size: var(--step--2);
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--cue-dim);
+}
+
+.title {
+  margin-top: 2px;
+  font-size: var(--step-2);
+  font-weight: 600;
+  font-variation-settings: "wdth" 108;
+  line-height: 1.25;
+  letter-spacing: -0.01em;
+}
+
+.meta {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  margin-top: var(--sp-2);
+  font-size: var(--step--2);
+  color: var(--ink-muted);
+}
+
+.dot {
+  width: 3px;
+  height: 3px;
+  border-radius: 50%;
+  background: var(--ink-faint);
+}
+
+.mp {
+  color: var(--amber);
+}
+
+.close {
+  flex-shrink: 0;
+  display: grid;
+  place-items: center;
+  width: 26px;
+  height: 26px;
+  border: 1px solid var(--rule-strong);
+  border-radius: var(--radius-sm);
+  color: var(--ink-muted);
+  transition:
+    color var(--fast) var(--ease),
+    border-color var(--fast) var(--ease),
+    background-color var(--fast) var(--ease);
+}
+
+.close:hover {
+  color: var(--ink);
+  border-color: var(--rule-bright);
+  background: var(--surface-high);
+}
+
+/* --------------------------------------------------------------- scroller */
+
+.scroller {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  scroll-padding-block: 40%;
+}
+
+.state {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  padding: var(--sp-6) var(--sp-4);
+  font-size: var(--step--1);
+  color: var(--ink-muted);
+}
+
+.stateError {
+  color: var(--danger);
+}
+
+.spinner {
+  width: 11px;
+  height: 11px;
+  border: 1.5px solid var(--rule-bright);
+  border-top-color: var(--cue);
+  border-radius: 50%;
+  animation: spin 700ms linear infinite;
+}
+
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+/* ------------------------------------------------------------------ cues */
+
+.cues {
+  padding: var(--sp-3) 0 40vh; /* tail room so the last cue can still centre */
+}
+
+/*
+ * One row per subtitle cue: timecode gutter, spine, text. The spine is a real
+ * element rather than a border so the cited range can colour a continuous line
+ * down the pane, which is what makes it read as a timeline.
+ */
+.cue {
+  display: grid;
+  grid-template-columns: 3.4rem 3px 1fr;
+  align-items: stretch;
+  gap: 0 var(--sp-3);
+  padding: 3px var(--sp-4) 3px var(--sp-3);
+  scroll-margin-block: 35%;
+  transition: background-color var(--fast) var(--ease);
+}
+
+.cue:hover {
+  background: rgba(233, 236, 241, 0.022);
+}
+
+.cue:focus-visible {
+  outline-offset: -2px;
+}
+
+.time {
+  /* Positioned so the playhead marker below stays inside this cell. Without it
+     the absolute pseudo-element escapes to the nearest positioned ancestor —
+     the app shell — and inflates its scrollHeight by however far this row is
+     scrolled, which quietly makes the whole shell scrollable. */
+  position: relative;
+  padding-top: 2px;
+  font-size: var(--step--2);
+  color: var(--ink-faint);
+  text-align: right;
+  transition: color var(--fast) var(--ease);
+}
+
+.spine {
+  background: var(--rule);
+  border-radius: 2px;
+  transition: background-color var(--fast) var(--ease);
+}
+
+.text {
+  padding: 1px 0;
+  font-size: var(--step-0);
+  line-height: 1.6;
+  color: var(--ink-soft);
+  transition: color var(--fast) var(--ease);
+}
+
+/* --- the range an answer was drawn from --- */
+
+.inRange {
+  background: var(--cue-wash);
+}
+
+.inRange .spine {
+  background: var(--cue-dim);
+}
+
+.inRange .text {
+  color: var(--ink);
+}
+
+.inRange .time {
+  color: var(--cue-dim);
+}
+
+/* --- the single line the answer leaned on --- */
+
+.playhead {
+  background: var(--cue-wash-strong);
+  animation: playheadPulse 1.4s var(--ease-out) 1;
+}
+
+.playhead .spine {
+  background: var(--cue);
+  box-shadow: 0 0 10px var(--cue-glow);
+}
+
+.playhead .time {
+  color: var(--cue);
+  font-weight: 700;
+}
+
+.playhead .text {
+  color: var(--ink);
+  font-weight: 500;
+}
+
+/* A playhead marker in the gutter, so the active line is findable at a glance.
+   Sits in the grid gap between the timecode and the spine. */
+.playhead .time::after {
+  content: "";
+  position: absolute;
+  top: 0.5em;
+  right: -0.6rem;
+  width: 0;
+  height: 0;
+  border-left: 5px solid var(--cue);
+  border-top: 4px solid transparent;
+  border-bottom: 4px solid transparent;
+}
+
+@media (max-width: 1200px) {
+  .pane {
+    border-left: none;
+  }
+}
