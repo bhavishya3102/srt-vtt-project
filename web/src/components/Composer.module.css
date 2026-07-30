@@ -1,44 +1,67 @@
-.dock {
-  padding: var(--sp-4) var(--sp-7) var(--sp-4);
+.composer {
+  flex-shrink: 0;
+  padding: var(--sp-3) var(--sp-5) var(--sp-4);
   border-top: 1px solid var(--rule);
-  background: linear-gradient(to top, var(--ground) 55%, transparent);
-  animation: rise var(--slow) var(--ease-out) 140ms both;
+  background: linear-gradient(to top, var(--ground) 60%, transparent);
 }
 
-.composer {
-  display: flex;
-  align-items: flex-end;
+.blocked {
+  max-width: var(--reading-width);
+  margin: 0 auto var(--sp-2);
+  font-size: var(--step--2);
+  color: var(--amber);
+}
+
+/* ------------------------------------------------------------------ form */
+
+/*
+ * A console line rather than a chat bubble: flat, monospace prompt caret, and a
+ * single lime edge that lights up on focus like an armed input.
+ */
+.form {
+  display: grid;
+  grid-template-columns: auto 1fr auto;
+  align-items: end;
   gap: var(--sp-3);
   max-width: var(--reading-width);
   margin: 0 auto;
-  padding: var(--sp-3) var(--sp-3) var(--sp-3) var(--sp-4);
-  border: 1px solid var(--rule-strong);
-  border-radius: 4px;
+  padding: var(--sp-3);
   background: var(--surface);
+  border: 1px solid var(--rule-strong);
+  border-radius: var(--radius);
   transition:
-    border-color var(--mid) var(--ease),
-    box-shadow var(--mid) var(--ease);
+    border-color var(--fast) var(--ease),
+    box-shadow var(--fast) var(--ease);
 }
 
-.composer:focus-within {
-  border-color: var(--amber-edge);
-  box-shadow:
-    0 0 0 1px var(--amber-edge),
-    0 1rem 3rem rgba(0, 0, 0, 0.32);
+.form:focus-within {
+  border-color: var(--cue-edge);
+  box-shadow: 0 0 0 3px var(--cue-wash);
+}
+
+.prompt {
+  padding-bottom: 2px;
+  font-family: var(--font-mono);
+  font-size: var(--step-2);
+  font-weight: 700;
+  line-height: 1;
+  color: var(--cue);
 }
 
 .input {
-  flex: 1;
-  min-width: 0;
-  border: none;
-  background: none;
-  outline: none;
-  resize: none;
-  font-family: var(--font-body);
+  width: 100%;
+  max-height: 200px;
+  padding: 0;
   font-size: var(--step-1);
   line-height: 1.55;
-  color: var(--ink);
+  background: none;
+  border: none;
+  resize: none;
   overflow-y: auto;
+}
+
+.input:focus {
+  outline: none; /* the wrapper shows focus instead */
 }
 
 .input::placeholder {
@@ -49,122 +72,99 @@
   cursor: not-allowed;
 }
 
-.actions {
-  flex: none;
-}
+/* --------------------------------------------------------------- actions */
 
-.send,
-.stop {
+.actions {
   display: flex;
   align-items: center;
   gap: var(--sp-2);
-  padding: 0.42rem 0.85rem;
-  border-radius: 3px;
-  font-family: var(--font-mono);
-  font-size: var(--step--1);
-  letter-spacing: 0.06em;
-  transition:
-    background var(--fast) var(--ease),
-    color var(--fast) var(--ease),
-    opacity var(--fast) var(--ease);
 }
 
-.send {
-  background: var(--amber);
-  color: var(--ground-deep);
-  font-weight: 600;
-}
-
-.send:hover:not(:disabled) {
-  background: var(--amber-bright);
-}
-
-.send:disabled {
-  background: var(--surface-raised);
-  color: var(--ink-faint);
-  cursor: not-allowed;
-}
-
-.send kbd {
-  font: inherit;
-  opacity: 0.7;
-}
-
-.stop {
-  border: 1px solid var(--rule-strong);
-  color: var(--ink-soft);
-}
-
-.stop:hover {
-  border-color: var(--oxblood);
-  color: var(--oxblood);
-}
-
-/* ---------------------------------------------------------------- footer */
-
-.footer {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: var(--sp-4);
-  max-width: var(--reading-width);
-  margin: var(--sp-2) auto 0;
-  font-family: var(--font-mono);
+.count {
   font-size: var(--step--2);
   color: var(--ink-faint);
 }
 
-.hint kbd {
-  font: inherit;
-  padding: 0.05rem 0.3rem;
-  border: 1px solid var(--rule);
-  border-radius: 2px;
-  color: var(--ink-muted);
+.send {
+  display: grid;
+  place-items: center;
+  width: 30px;
+  height: 30px;
+  color: var(--ground);
+  background: var(--cue);
+  border-radius: var(--radius-sm);
+  transition:
+    background-color var(--fast) var(--ease),
+    opacity var(--fast) var(--ease),
+    transform var(--fast) var(--ease);
 }
 
-.right {
+.send:hover:not(:disabled) {
+  background: var(--cue-bright);
+  transform: translateX(1px);
+}
+
+.send:disabled {
+  color: var(--ink-faint);
+  background: var(--surface-high);
+}
+
+.stop {
+  padding: var(--sp-1) var(--sp-3);
+  font-size: var(--step--1);
+  color: var(--danger);
+  border: 1px solid rgba(255, 107, 107, 0.35);
+  border-radius: var(--radius-sm);
+  transition: background-color var(--fast) var(--ease);
+}
+
+.stop:hover {
+  background: var(--danger-wash);
+}
+
+/* -------------------------------------------------------------- footnote */
+
+.footnote {
   display: flex;
   align-items: center;
-  gap: var(--sp-4);
+  justify-content: space-between;
+  gap: var(--sp-3);
+  max-width: var(--reading-width);
+  margin: var(--sp-2) auto 0;
+  font-size: var(--step--2);
+  color: var(--ink-faint);
 }
 
-.counter[data-low] {
-  color: var(--oxblood);
+.footnote kbd {
+  font-family: var(--font-mono);
+  font-size: 0.6875rem;
+  padding: 1px 4px;
+  color: var(--ink-muted);
+  background: var(--surface-raised);
+  border: 1px solid var(--rule);
+  border-radius: 3px;
 }
 
 .clear {
+  font-size: var(--step--2);
   color: var(--ink-faint);
-  text-decoration: underline;
-  text-underline-offset: 3px;
   transition: color var(--fast) var(--ease);
 }
 
 .clear:hover {
-  color: var(--amber);
+  color: var(--danger);
 }
 
-@media (max-width: 60rem) {
-  .dock {
-    padding: var(--sp-3) var(--sp-4);
+@media (max-width: 760px) {
+  .composer {
+    padding: var(--sp-3) var(--sp-3) var(--sp-4);
   }
 
-  .hint {
+  .footnote span {
     display: none;
   }
 
-  .footer {
-    justify-content: flex-end;
-  }
-}
-
-/* Keyframes must live in this module — see the note in styles/tokens.css. */
-@keyframes rise {
-  from {
-    opacity: 0;
-    transform: translateY(12px);
-  }
-  to {
-    opacity: 1;
-    transform: none;
+  .clear {
+    margin-left: auto;
   }
 }

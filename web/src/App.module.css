@@ -4,64 +4,83 @@
   display: grid;
   grid-template-rows: auto 1fr;
   height: 100dvh;
-  overflow: hidden;
+  /* `clip` rather than `hidden`: hidden still creates a scroll container, which
+     focus() and anchor jumps can scroll programmatically even though the user
+     can't. clip creates none, so the shell can never drift. */
+  overflow: clip;
 }
 
+/*
+ * Three columns. The transcript column has no width until a lesson is open, so
+ * the conversation gets the full width when there's nothing to show beside it —
+ * no empty placeholder pane taking up a third of the screen.
+ */
 .body {
   display: grid;
-  grid-template-columns: var(--rail-width) 1fr;
+  grid-template-columns: var(--rail-width) minmax(0, 1fr);
   min-height: 0;
+}
+
+.withPane .body {
+  grid-template-columns: var(--rail-width) minmax(0, 1fr) var(--pane-width);
 }
 
 .main {
-  display: grid;
-  grid-template-rows: 1fr auto;
-  min-height: 0;
+  display: flex;
+  flex-direction: column;
   min-width: 0;
+  min-height: 0;
+  animation: fadeIn var(--slow) var(--ease-out) 60ms both;
+}
+
+.paneSlot {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+
+.paneSlot > * {
+  flex: 1;
+  min-height: 0;
 }
 
 .scrim {
   position: fixed;
   inset: 0;
-  z-index: 15;
-  background: rgba(8, 6, 5, 0.62);
+  z-index: 30;
+  background: rgba(7, 8, 9, 0.66);
   backdrop-filter: blur(2px);
-  animation: fade var(--fast) var(--ease);
+  animation: fadeIn var(--fast) var(--ease) both;
   cursor: default;
-  display: none;
 }
 
-/* --- below 60rem the rail becomes a slide-over drawer --- */
+/* -------------------------------------------------------------- responsive */
 
-@media (max-width: 60rem) {
-  .body {
-    grid-template-columns: 1fr;
+/* Below this the transcript can't sit beside the chat without squeezing both,
+   so it becomes an overlay instead. */
+@media (max-width: 1200px) {
+  .withPane .body {
+    grid-template-columns: var(--rail-width) minmax(0, 1fr);
   }
 
-  .body > :first-child {
+  .paneSlot {
     position: fixed;
-    inset: 0 auto 0 0;
-    z-index: 20;
-    width: min(var(--rail-width), 88vw);
-    transform: translateX(-102%);
-    transition: transform var(--mid) var(--ease-out);
-    box-shadow: 2rem 0 4rem rgba(0, 0, 0, 0.5);
+    z-index: 35;
+    inset: 0 0 0 auto;
+    width: min(30rem, 92vw);
+    box-shadow: -20px 0 60px rgba(0, 0, 0, 0.55);
+  }
+}
+
+@media (max-width: 900px) {
+  .body,
+  .withPane .body {
+    grid-template-columns: minmax(0, 1fr);
   }
 
+  /* The rail is fixed and off-canvas at this width (see ModuleRail); this class
+     is what slides it in. */
   .railOpen {
     transform: none !important;
-  }
-
-  .scrim {
-    display: block;
-  }
-}
-
-@keyframes fade {
-  from {
-    opacity: 0;
-  }
-  to {
-    opacity: 1;
   }
 }
