@@ -53,6 +53,25 @@ test("masks phone numbers in both accepted shapes", () => {
   assert.ok(wasMasked("+1 555-867-5309"));
 });
 
+test("REGRESSION: a phone number adjacent to punctuation is still masked", () => {
+  // The original trailing guard rejected any following `.` `,` `:` `-` in order
+  // to protect dotted-decimals, which also skipped every number at the end of a
+  // sentence — the most common way one is actually written. Caught in a live run,
+  // not by the tests above, because those all had spaces on both sides.
+  assert.ok(wasMasked("call 9876543210."), "sentence-final");
+  assert.ok(wasMasked("call 9876543210, please"), "before a comma");
+  assert.ok(wasMasked("(9876543210)"), "in brackets");
+  assert.ok(wasMasked("number: 9876543210"), "after a colon");
+  assert.ok(wasMasked("9876543210"), "on its own");
+});
+
+test("PINNED: dotted decimals still survive next to that fix", () => {
+  // The same guard is what keeps these from reading as phone-length digit runs.
+  assert.ok(untouched("bind to 0.0.0.0 and 127.0.0.1"));
+  assert.ok(untouched("expo SDK 1.2.3 aur react 19.2.7"));
+  assert.ok(untouched("cue at 00:00:06,420 --> 00:00:09,180 dekho"));
+});
+
 /* -------------------------------------------------- must NOT mask (pinned) --- */
 //
 // This app is built out of things that look like personal data. A naive phone

@@ -343,6 +343,10 @@ Rules:
 - Be direct and practical. Lead with the answer, then the detail. Short markdown
   — a few sentences, a list only if there are real steps. Don't pad.
 
+- Write the answer as prose only. Do NOT mention excerpt numbers, do not write
+  "(Excerpt 3)", and do not paste quotes into the answer text. The citations are
+  attached separately and rendered as links, so repeating them inline is noise.
+
 - For every claim, cite the excerpt it came from and quote one sentence VERBATIM
   from it. Those quotes are matched back against the transcript to locate the
   exact second the instructor said it, so an invented or paraphrased quote breaks

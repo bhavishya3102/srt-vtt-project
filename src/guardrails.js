@@ -71,13 +71,16 @@ const RULES = [
     // A loose candidate is matched and then counted in `validate`, because the
     // digit-grouping rules are far easier to state in code than in a regex.
     //
-    // `:` `,` and `.` are excluded from the separator class and from both
-    // boundaries. That is what keeps the dangerous cases safe: in
-    // `00:00:06,420` and `0.0.0.0` and `1.2.3`, the separators that would join
-    // the short digit groups into a phone-length run are all disallowed.
+    // `:` `,` and `.` are excluded from the separator class, which is what keeps
+    // the dangerous cases safe: in `00:00:06,420`, `0.0.0.0` and `1.2.3` those
+    // separators can't join the short digit groups into a phone-length run.
+    //
+    // The trailing guard rejects `.` `:` `,` `-` only when a DIGIT follows, so a
+    // number at the end of a sentence ("call 9876543210.") still matches while
+    // a dotted-decimal still doesn't.
     type: "phone",
     placeholder: "[phone redacted]",
-    pattern: /(?<![\d.:,\-])\+?\d[\d ()-]{7,18}\d(?![\d.:,\-])/g,
+    pattern: /(?<![\d.:,\-])\+?\d[\d ()-]{7,18}\d(?![\d])(?![.:,\-]\d)/g,
     validate: (match) => {
       const digits = match.replace(/\D/g, "");
       // With a country code, accept the full international range. Without one,
