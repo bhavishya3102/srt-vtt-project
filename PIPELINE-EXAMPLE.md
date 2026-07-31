@@ -367,65 +367,82 @@ Asked in Hinglish, answered in Hinglish — while every one of the excerpts it r
 
 ## Step 8 — pinpointSentence: from a 90-second window to one line
 
-### Why this step has to exist
+### Pehle: chunk hai kya, aur banate hi kyun hain
 
-Retrieval works in chunks, and a chunk is the wrong size to send someone to.
+Aapka course 22.7 ghante ki baat-cheet hai. Poora text AI ko bhejna na possible hai na sasta.
 
-The course is 22.7 hours of speech. None of it can go to the model in one piece, so it is cut up and
-only the six most relevant pieces are sent. Each piece is about 1200 characters — roughly **16
-subtitle lines, about 90 seconds** of the instructor talking.
+Isliye hum poore course ko chhote tukdon me kaat dete hain. Har tukda = ek "chunk". Sawaal aane par
+hum sirf 6 sabse relevant tukde dhoondh ke AI ko bhejte hain, poora course nahi.
 
-That is a good size for *retrieval*. It is a bad size for a *link*. Here is the chunk that answered
-this question, from the inside:
+Ek chunk ka size ~1200 characters rakha hai. Subtitle me woh banta hai ~16 lines, jo instructor ~90
+second me bolta hai.
+
+### Ab asli baat: citation ka kaam
+
+Answer ke neeche jo chip dikhta hai, uska kaam hai batana ki ye baat course me kahan hai — taaki aap
+click karke wahin pahunch jayein.
+
+Ab dekho ek chunk andar se kaisa dikhta hai. Ye 16 lines ek hi chunk hain:
 
 ```
-  00:00  Here everyone and in this lecture...
-  00:05  help of expo routers.
-▸ 00:07  Dynamic routes let you build screen that accept...   ← the line that answers it
-  00:15  path just like dynamic URL on the web...
-  00:21  Perfect. So what are dynamic routes?
-  00:29  But as you know we have multiple posts...
-  00:38  our platform like post one, post two...
-  00:43  And for each post, I wanted to have a route segment.
-  00:48  All right, for each post...
-  00:54  So instead of separately creating for every post ID...
-  01:02  routes because let's say right now you only have three posts.
-  01:07  So you are basically going to create.
-  01:10  We can say post1.tsx exactly post2.tsx...
-  01:19  of posts then is this feasible to create...
-  01:27  No.
-  01:28  This is where the use of dynamic routes come.
-         └────────────── one chunk · 00:00–01:30 ──────────────┘
+00:00  Here everyone and in this lecture...
+00:05  help of expo routers.
+00:07  Dynamic routes let you build screen that accept...   ← JAWAB YAHAN HAI
+00:15  path just like dynamic URL on the web...
+00:21  Perfect. So what are dynamic routes?
+00:29  But as you know we have multiple posts...
+00:38  our platform like post one, post two...
+00:43  And for each post, I wanted to have a route segment.
+00:48  All right, for each post...
+00:54  So instead of separately creating for every post ID...
+01:02  routes because let's say right now you only have three posts.
+01:07  So you are basically going to create.
+01:10  We can say post1.tsx exactly post2.tsx...
+01:19  of posts then is this feasible to create...
+01:27  No.
+01:28  This is where the use of dynamic routes come.
+        └──────────── ek chunk = 00:00 se 01:30 ────────────┘
 ```
 
-After retrieval, all the system knows is *"this whole chunk was relevant."* It does not know which of
-those 16 lines actually carried the answer. So the citation could only say:
+### Problem
 
-> **Module 4 · Dynamic Routes · 00:00**
+Computer ko sirf itna pata hai ki "ye poora chunk relevant tha" — 00:00 se 01:30 tak.
 
-Click that and the transcript opens at 00:00, while the answer is at 00:07 — and had the answer come
-from the last line instead, you would land 88 seconds early. Either way you end up scanning the 16
-lines yourself, which is the work the citation was supposed to save you.
+Use ye nahi pata ki 16 lines me se kaunsi line ne actually jawab diya.
 
-It is the difference between *"it's on page 47"* and *"page 47, line 12"*. Both are true; only one
-saves you reading the page. **A chunk is the page. A cue is the line.** Without this step the app was
-giving out page numbers.
+To citation chip banta:
 
-| | What the user gets |
+> Module 4 · Dynamic Routes · 00:00
+
+Aap click karte ho → transcript 00:00 par khulta hai. Par jawab to 00:07 par tha. Aur agar jawab
+01:28 wali line me hota, to aap 88 second door land karte.
+
+Har baar aapko khud 16 lines padh ke dhoondhna padta ki instructor ne exactly kahan bola.
+
+### Ek analogy
+
+Koi kahe: "Ye baat kitab ke page 47 par likhi hai."
+
+Page 47 par 40 lines hain. Baat sahi hai, par ab poora page aapko khud padhna padega.
+
+Behtar hota agar woh kehta: "Page 47, line 12."
+
+Chunk = page. Cue (subtitle line) = line.
+
+Bina pinpoint ke hum page number de rahe the. Pinpoint ke saath line number dete hain.
+
+### Isliye Step 8 zaroori hai
+
+| | Kya milta |
 |---|---|
-| Cite the chunk only | "somewhere between **00:00 and 01:30**" — 90 seconds to search |
-| Cite with a pinpoint | "at **00:07**" — that line, highlighted |
+| Sirf chunk cite karein | "kahin 00:00–01:30 ke beech" — 90 second khud dhoondho |
+| Pinpoint ke saath | "00:07 par" — seedhi wahi line |
 
-### How it does it
+Isiliye AI se ek sentence hu-ba-hu copy karwate hain. Us copy ki hui line ko chunk ki 16 lines se
+match karke pata chal jata hai ki teesri line thi — aur us line ka time already stored hai: 00:07.
 
-The answering prompt requires each citation to carry one sentence copied out of its excerpt
-**verbatim**, not paraphrased. That quote is then matched back against the sentences of that same
-chunk to work out which one it was — and because stage 1 recorded the cue range of every sentence as
-it was built, the winning sentence already knows its cue, and the cue already knows its millisecond.
-
-Matching is plain token overlap, so it costs nothing: no second model call, and the same input always
-gives the same answer. Below the threshold of 0.45 the citation falls back to the chunk's own start —
-coarser, but never wrong.
+Ek line me: hum jaante the ki jawab is 90-second ke tukde me hai; Step 8 batata hai ki tukde ke andar
+theek kis second par.
 
 **Citation [1]**
 
