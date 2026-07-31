@@ -367,9 +367,65 @@ Asked in Hinglish, answered in Hinglish — while every one of the excerpts it r
 
 ## Step 8 — pinpointSentence: from a 90-second window to one line
 
-Each citation arrives as an excerpt number plus a sentence quoted **verbatim**. That quote is matched
-back against the sentences of its own chunk to find the exact cue it came from. Deterministic, no
-extra model call.
+### Why this step has to exist
+
+Retrieval works in chunks, and a chunk is the wrong size to send someone to.
+
+The course is 22.7 hours of speech. None of it can go to the model in one piece, so it is cut up and
+only the six most relevant pieces are sent. Each piece is about 1200 characters — roughly **16
+subtitle lines, about 90 seconds** of the instructor talking.
+
+That is a good size for *retrieval*. It is a bad size for a *link*. Here is the chunk that answered
+this question, from the inside:
+
+```
+  00:00  Here everyone and in this lecture...
+  00:05  help of expo routers.
+▸ 00:07  Dynamic routes let you build screen that accept...   ← the line that answers it
+  00:15  path just like dynamic URL on the web...
+  00:21  Perfect. So what are dynamic routes?
+  00:29  But as you know we have multiple posts...
+  00:38  our platform like post one, post two...
+  00:43  And for each post, I wanted to have a route segment.
+  00:48  All right, for each post...
+  00:54  So instead of separately creating for every post ID...
+  01:02  routes because let's say right now you only have three posts.
+  01:07  So you are basically going to create.
+  01:10  We can say post1.tsx exactly post2.tsx...
+  01:19  of posts then is this feasible to create...
+  01:27  No.
+  01:28  This is where the use of dynamic routes come.
+         └────────────── one chunk · 00:00–01:30 ──────────────┘
+```
+
+After retrieval, all the system knows is *"this whole chunk was relevant."* It does not know which of
+those 16 lines actually carried the answer. So the citation could only say:
+
+> **Module 4 · Dynamic Routes · 00:00**
+
+Click that and the transcript opens at 00:00, while the answer is at 00:07 — and had the answer come
+from the last line instead, you would land 88 seconds early. Either way you end up scanning the 16
+lines yourself, which is the work the citation was supposed to save you.
+
+It is the difference between *"it's on page 47"* and *"page 47, line 12"*. Both are true; only one
+saves you reading the page. **A chunk is the page. A cue is the line.** Without this step the app was
+giving out page numbers.
+
+| | What the user gets |
+|---|---|
+| Cite the chunk only | "somewhere between **00:00 and 01:30**" — 90 seconds to search |
+| Cite with a pinpoint | "at **00:07**" — that line, highlighted |
+
+### How it does it
+
+The answering prompt requires each citation to carry one sentence copied out of its excerpt
+**verbatim**, not paraphrased. That quote is then matched back against the sentences of that same
+chunk to work out which one it was — and because stage 1 recorded the cue range of every sentence as
+it was built, the winning sentence already knows its cue, and the cue already knows its millisecond.
+
+Matching is plain token overlap, so it costs nothing: no second model call, and the same input always
+gives the same answer. Below the threshold of 0.45 the citation falls back to the chunk's own start —
+coarser, but never wrong.
 
 **Citation [1]**
 
